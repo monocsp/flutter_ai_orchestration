@@ -1,0 +1,9 @@
+2026-03-09 16:29:12 +0900 [시작] Claude 작업 실행
+2026-03-09 16:29:12 +0900 [입력] prompt=ai/inbox/jira_issues.md
+----- STDERR -----
+error: unknown option '--no-mcp'
+------------------
+2026-03-09 16:30:23 +0900 [시작] Claude 작업 실행
+2026-03-09 16:30:23 +0900 [입력] prompt=ai/inbox/jira_issues.md
+----- STDERR -----
+------------------
