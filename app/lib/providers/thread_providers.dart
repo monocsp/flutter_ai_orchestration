@@ -4,6 +4,7 @@ import '../core/models/orchestration_thread.dart';
 import '../core/models/orchestration_stage.dart';
 import '../core/services/agent_detection_service.dart';
 import '../core/services/agent_runner_service.dart';
+import '../core/services/error_log_service.dart';
 import 'session_providers.dart';
 
 class ThreadListState {
@@ -182,6 +183,10 @@ class ThreadListNotifier extends Notifier<ThreadListState> {
     ));
 
     if (!bothOk) {
+      await ErrorLogService.log(
+        stage: 'Agent 상태 확인',
+        error: resultLines.toString(),
+      );
       _updateThreadStatus(tempId, ThreadStatus.failed);
       return;
     }
@@ -256,6 +261,14 @@ class ThreadListNotifier extends Notifier<ThreadListState> {
         if (result.output.isNotEmpty) {
           errorMsg.writeln('\n### 출력\n```\n${result.output}\n```');
         }
+
+        final logPath = await ErrorLogService.log(
+          stage: stage.name,
+          error: result.error ?? 'Unknown error',
+          stdout: result.output,
+          exitCode: result.exitCode,
+        );
+        errorMsg.writeln('\n> 에러 로그: `$logPath`');
 
         _updateStage(tempId, i, (s) => s.copyWith(
           status: ThreadStatus.failed,
