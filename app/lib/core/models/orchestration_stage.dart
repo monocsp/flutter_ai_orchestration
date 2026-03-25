@@ -68,7 +68,7 @@ class OrchestrationStage {
           '더 정확한 분석안을 작성합니다.',
       role: StageRole.analysis,
       outputFileName: '03_reinforced_analysis_prompt.md',
-      promptTemplate: 'analysis_prompt.md',
+      promptTemplate: 'reinforced_analysis_prompt.md',
     ),
     OrchestrationStage(
       stepNumber: 4,
@@ -78,7 +78,7 @@ class OrchestrationStage {
           '최종 계획으로 넘길 핵심 수정 사항을 정리합니다.',
       role: StageRole.critique,
       outputFileName: '04_second_review_prompt.md',
-      promptTemplate: 'critical_review_prompt.md',
+      promptTemplate: 'second_review_prompt.md',
     ),
     OrchestrationStage(
       stepNumber: 5,
