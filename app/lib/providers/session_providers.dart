@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import '../core/models/agent_provider.dart';
@@ -11,16 +12,23 @@ import '../core/services/template_renderer_service.dart';
 
 // Handoff kit path detection
 final handoffKitPathProvider = Provider<String>((ref) {
-  final scriptDir = Platform.script.toFilePath();
+  // flutter run 시 cwd는 app/ 디렉터리
+  final cwd = Directory.current.path;
   final candidates = [
-    p.join(p.dirname(p.dirname(scriptDir)), 'user_handoff_kit'),
-    p.join(Directory.current.path, 'user_handoff_kit'),
-    p.join(p.dirname(Directory.current.path), 'user_handoff_kit'),
+    p.join(cwd, 'user_handoff_kit'),              // app/user_handoff_kit
+    p.join(p.dirname(cwd), 'user_handoff_kit'),    // 프로젝트루트/user_handoff_kit
+    p.join(cwd, '..', 'user_handoff_kit'),         // 상대경로
   ];
-  for (final path in candidates) {
-    if (Directory(path).existsSync()) return path;
+  for (final c in candidates) {
+    final resolved = p.normalize(c);
+    if (Directory(resolved).existsSync()) {
+      debugPrint('[CONFIG] handoff kit found: $resolved');
+      return resolved;
+    }
   }
-  return p.join(Directory.current.path, 'user_handoff_kit');
+  final fallback = p.normalize(p.join(cwd, '..', 'user_handoff_kit'));
+  debugPrint('[CONFIG] handoff kit fallback: $fallback (cwd=$cwd)');
+  return fallback;
 });
 
 final configLoaderProvider = Provider<ConfigLoaderService>((ref) {
