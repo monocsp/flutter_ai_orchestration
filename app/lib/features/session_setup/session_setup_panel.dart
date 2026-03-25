@@ -9,6 +9,7 @@ import '../../core/models/session_config.dart';
 import '../../providers/session_providers.dart';
 import '../../providers/agent_providers.dart';
 import '../../providers/thread_providers.dart';
+import '../../core/services/sample_template_service.dart';
 import '../workbench/workbench_screen.dart';
 
 class SessionSetupPanel extends ConsumerStatefulWidget {
@@ -125,6 +126,31 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
             ),
           ),
         ),
+
+        // Sample template button (only when no doc loaded)
+        if (session.sourceDocumentPath == null)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () async {
+                  final path = await SampleTemplateService.createSampleFile(
+                    session.outputRootPath,
+                  );
+                  ref.read(sessionProvider.notifier).setSourceDocument(path);
+                },
+                icon: Icon(Icons.auto_awesome, size: 16, color: Colors.amber.shade700),
+                label: const Text('기본 템플릿으로 시작'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF334155),
+                  side: BorderSide(color: Colors.amber.shade300),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
+          ),
 
         const SizedBox(height: 16),
 

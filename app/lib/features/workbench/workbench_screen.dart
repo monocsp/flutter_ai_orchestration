@@ -8,6 +8,7 @@ import '../stage_editor/stage_editor_panel.dart';
 import '../documents/documents_panel.dart';
 import '../agent_status/agent_status_bar.dart';
 import '../thread/thread_detail_view.dart';
+import '../tutorial/tutorial_overlay.dart';
 
 /// Main view mode
 enum WorkbenchView { setup, thread }
@@ -23,45 +24,65 @@ final workbenchViewProvider =
     NotifierProvider<WorkbenchViewNotifier, WorkbenchView>(
         WorkbenchViewNotifier.new);
 
-class WorkbenchScreen extends ConsumerWidget {
+class WorkbenchScreen extends ConsumerStatefulWidget {
   const WorkbenchScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<WorkbenchScreen> createState() => _WorkbenchScreenState();
+}
+
+class _WorkbenchScreenState extends ConsumerState<WorkbenchScreen> {
+  bool _showTutorial = false;
+
+  void _toggleTutorial() => setState(() => _showTutorial = !_showTutorial);
+
+  @override
+  Widget build(BuildContext context) {
     final currentView = ref.watch(workbenchViewProvider);
     final threadState = ref.watch(threadListProvider);
 
     return Scaffold(
-      body: Column(
+      body: Stack(
         children: [
-          Expanded(
-            child: Row(
-              children: [
-                // === LEFT RAIL: Navigation sidebar ===
-                _SideRail(
-                  currentView: currentView,
-                  threadState: threadState,
-                ),
-                // === MAIN CONTENT ===
-                Expanded(
-                  child: Column(
-                    children: [
-                      // Title bar
-                      _TitleBar(currentView: currentView, threadState: threadState),
-                      // Body
-                      Expanded(
-                        child: currentView == WorkbenchView.setup
-                            ? const _SetupBody()
-                            : const _ThreadBody(),
+          // Main UI
+          Column(
+            children: [
+              Expanded(
+                child: Row(
+                  children: [
+                    _SideRail(
+                      currentView: currentView,
+                      threadState: threadState,
+                      onHelpTap: _toggleTutorial,
+                    ),
+                    Expanded(
+                      child: Column(
+                        children: [
+                          _TitleBar(
+                            currentView: currentView,
+                            threadState: threadState,
+                            onHelpTap: _toggleTutorial,
+                          ),
+                          Expanded(
+                            child: currentView == WorkbenchView.setup
+                                ? const _SetupBody()
+                                : const _ThreadBody(),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+              const AgentStatusBar(),
+            ],
           ),
-          // Bottom: Agent status bar
-          const AgentStatusBar(),
+          // Tutorial overlay
+          if (_showTutorial)
+            TutorialOverlay(
+              steps: setupTutorialSteps,
+              onComplete: () => setState(() => _showTutorial = false),
+            ),
         ],
       ),
     );
@@ -72,8 +93,13 @@ class WorkbenchScreen extends ConsumerWidget {
 class _SideRail extends ConsumerWidget {
   final WorkbenchView currentView;
   final ThreadListState threadState;
+  final VoidCallback onHelpTap;
 
-  const _SideRail({required this.currentView, required this.threadState});
+  const _SideRail({
+    required this.currentView,
+    required this.threadState,
+    required this.onHelpTap,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -135,6 +161,21 @@ class _SideRail extends ConsumerWidget {
                     },
                   ),
           ),
+          // Help button at bottom
+          const SizedBox(height: 8),
+          Container(
+            width: 28,
+            height: 1,
+            color: const Color(0xFF475569),
+          ),
+          const SizedBox(height: 8),
+          _RailButton(
+            icon: Icons.help_outline_rounded,
+            tooltip: '사용법',
+            isActive: false,
+            onTap: onHelpTap,
+          ),
+          const SizedBox(height: 12),
         ],
       ),
     );
@@ -273,8 +314,13 @@ class _ThreadIcon extends StatelessWidget {
 class _TitleBar extends StatelessWidget {
   final WorkbenchView currentView;
   final ThreadListState threadState;
+  final VoidCallback onHelpTap;
 
-  const _TitleBar({required this.currentView, required this.threadState});
+  const _TitleBar({
+    required this.currentView,
+    required this.threadState,
+    required this.onHelpTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -327,6 +373,12 @@ class _TitleBar extends StatelessWidget {
                 ),
               ),
             ),
+          const SizedBox(width: 8),
+          IconButton(
+            icon: Icon(Icons.help_outline, size: 18, color: Colors.grey.shade400),
+            tooltip: '사용법',
+            onPressed: onHelpTap,
+          ),
         ],
       ),
     );
