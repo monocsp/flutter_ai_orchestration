@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models/orchestration_stage.dart';
+import '../../providers/session_providers.dart';
 
-class StageCard extends StatefulWidget {
+class StageCard extends ConsumerStatefulWidget {
   final OrchestrationStage stage;
   final int stageIndex;
   final Color color;
@@ -16,31 +18,101 @@ class StageCard extends StatefulWidget {
   });
 
   @override
-  State<StageCard> createState() => _StageCardState();
+  ConsumerState<StageCard> createState() => _StageCardState();
 }
 
-class _StageCardState extends State<StageCard> {
-  late TextEditingController _promptController;
+class _StageCardState extends ConsumerState<StageCard> {
+  String? _templateContent;
+  bool _isLoading = true;
+  bool _isEditing = false;
+  bool _isCustom = false;
+  late TextEditingController _editController;
 
   @override
   void initState() {
     super.initState();
-    _promptController =
-        TextEditingController(text: widget.stage.promptTemplate);
+    _editController = TextEditingController();
+    _loadTemplate();
   }
 
   @override
   void didUpdateWidget(covariant StageCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.stageIndex != widget.stageIndex) {
-      _promptController.text = widget.stage.promptTemplate;
+    if (oldWidget.stage.promptTemplate != widget.stage.promptTemplate ||
+        oldWidget.stageIndex != widget.stageIndex) {
+      _isEditing = false;
+      _loadTemplate();
     }
   }
 
   @override
   void dispose() {
-    _promptController.dispose();
+    _editController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadTemplate() async {
+    setState(() => _isLoading = true);
+    try {
+      final configLoader = ref.read(configLoaderProvider);
+      final content =
+          await configLoader.loadTemplate(widget.stage.promptTemplate);
+      final hasCustom =
+          await configLoader.hasCustomTemplate(widget.stage.promptTemplate);
+      if (mounted) {
+        setState(() {
+          _templateContent = content.isNotEmpty ? content : null;
+          _isCustom = hasCustom;
+          _isLoading = false;
+          if (_templateContent != null) {
+            _editController.text = _templateContent!;
+          }
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _templateContent = null;
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _saveCustom() async {
+    final configLoader = ref.read(configLoaderProvider);
+    await configLoader.saveCustomTemplate(
+        widget.stage.promptTemplate, _editController.text);
+    setState(() {
+      _templateContent = _editController.text;
+      _isEditing = false;
+      _isCustom = true;
+    });
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('커스텀 템플릿이 저장되었습니다'),
+          behavior: SnackBarBehavior.floating,
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  Future<void> _resetToDefault() async {
+    final configLoader = ref.read(configLoaderProvider);
+    await configLoader.deleteCustomTemplate(widget.stage.promptTemplate);
+    _isEditing = false;
+    await _loadTemplate();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('기본 템플릿으로 되돌렸습니다'),
+          behavior: SnackBarBehavior.floating,
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
   }
 
   @override
@@ -100,7 +172,6 @@ class _StageCardState extends State<StageCard> {
                     ],
                   ),
                 ),
-                // Enable toggle
                 Switch(
                   value: stage.enabled,
                   activeThumbColor: widget.color,
@@ -129,7 +200,7 @@ class _StageCardState extends State<StageCard> {
             const Divider(),
             const SizedBox(height: 12),
 
-            // Stage info - wrap for narrow screens
+            // Stage info
             Wrap(
               spacing: 12,
               runSpacing: 8,
@@ -144,55 +215,175 @@ class _StageCardState extends State<StageCard> {
                   label: '템플릿',
                   value: stage.promptTemplate,
                 ),
+                if (_isCustom)
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.shade50,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: Colors.amber.shade200),
+                    ),
+                    child: Text(
+                      '커스텀',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.amber.shade800,
+                      ),
+                    ),
+                  ),
               ],
             ),
 
             const SizedBox(height: 16),
 
-            // Prompt template editor label
-            Text(
-              '프롬프트 템플릿 파일',
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF334155),
-              ),
+            // Template content toolbar
+            Row(
+              children: [
+                const Text(
+                  '프롬프트 내용',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF334155),
+                  ),
+                ),
+                const Spacer(),
+                if (!_isEditing && _templateContent != null)
+                  TextButton.icon(
+                    onPressed: () => setState(() => _isEditing = true),
+                    icon: const Icon(Icons.edit, size: 14),
+                    label: const Text('편집'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: widget.color,
+                      textStyle: const TextStyle(fontSize: 12),
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      minimumSize: const Size(0, 30),
+                    ),
+                  ),
+                if (_isEditing) ...[
+                  TextButton.icon(
+                    onPressed: () {
+                      _editController.text = _templateContent ?? '';
+                      setState(() => _isEditing = false);
+                    },
+                    icon: const Icon(Icons.close, size: 14),
+                    label: const Text('취소'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.grey.shade500,
+                      textStyle: const TextStyle(fontSize: 12),
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      minimumSize: const Size(0, 30),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  TextButton.icon(
+                    onPressed: _saveCustom,
+                    icon: const Icon(Icons.save, size: 14),
+                    label: const Text('저장'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: widget.color,
+                      textStyle: const TextStyle(
+                          fontSize: 12, fontWeight: FontWeight.w600),
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      minimumSize: const Size(0, 30),
+                    ),
+                  ),
+                ],
+                if (_isCustom && !_isEditing)
+                  TextButton.icon(
+                    onPressed: _resetToDefault,
+                    icon: const Icon(Icons.restore, size: 14),
+                    label: const Text('기본값'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.grey.shade500,
+                      textStyle: const TextStyle(fontSize: 12),
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      minimumSize: const Size(0, 30),
+                    ),
+                  ),
+              ],
             ),
             const SizedBox(height: 8),
 
-            // Prompt template editor
+            // Template content
             Expanded(
               child: Container(
                 width: double.infinity,
-                padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
+                  color: _isEditing
+                      ? Colors.white
+                      : const Color(0xFFF8FAFC),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
-                ),
-                child: TextField(
-                  controller: _promptController,
-                  maxLines: null,
-                  expands: true,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontFamily: 'monospace',
-                    color: Color(0xFF334155),
-                    height: 1.6,
+                  border: Border.all(
+                    color: _isEditing
+                        ? widget.color
+                        : const Color(0xFFE2E8F0),
+                    width: _isEditing ? 2 : 1,
                   ),
-                  decoration: const InputDecoration(
-                    border: InputBorder.none,
-                    enabledBorder: InputBorder.none,
-                    focusedBorder: InputBorder.none,
-                    fillColor: Colors.transparent,
-                    filled: true,
-                    contentPadding: EdgeInsets.zero,
-                    isDense: true,
-                  ),
-                  onChanged: (v) {
-                    widget.onChanged(stage.copyWith(promptTemplate: v));
-                  },
                 ),
+                child: _isLoading
+                    ? const Center(
+                        child: SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      )
+                    : _templateContent != null
+                        ? _isEditing
+                            ? TextField(
+                                controller: _editController,
+                                maxLines: null,
+                                expands: true,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontFamily: 'monospace',
+                                  color: Color(0xFF334155),
+                                  height: 1.6,
+                                ),
+                                decoration: const InputDecoration(
+                                  border: InputBorder.none,
+                                  contentPadding: EdgeInsets.all(12),
+                                ),
+                              )
+                            : SingleChildScrollView(
+                                padding: const EdgeInsets.all(12),
+                                child: SelectableText(
+                                  _templateContent!,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontFamily: 'monospace',
+                                    color: Color(0xFF334155),
+                                    height: 1.6,
+                                  ),
+                                ),
+                              )
+                        : Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.info_outline,
+                                    size: 24, color: Colors.grey.shade300),
+                                const SizedBox(height: 8),
+                                Text(
+                                  '템플릿 파일을 찾을 수 없습니다',
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey.shade400),
+                                ),
+                                Text(
+                                  stage.promptTemplate,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontFamily: 'monospace',
+                                    color: Colors.grey.shade400,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
               ),
             ),
           ],
