@@ -75,6 +75,7 @@ class ThreadListNotifier extends Notifier<ThreadListState> {
       stageThreads.add(StageThread(
         stepNumber: stage.stepNumber,
         name: stage.name,
+        description: stage.description,
         status: i == 0 ? ThreadStatus.inProgress : ThreadStatus.pending,
         promptPath: promptPath,
         resultPath: resultPath,

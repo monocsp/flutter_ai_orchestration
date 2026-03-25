@@ -41,41 +41,28 @@ class _StageThreadCardState extends State<StageThreadCard> {
     final stage = widget.stage;
 
     return Padding(
-      padding: const EdgeInsets.only(left: 20, right: 16),
-      child: IntrinsicHeight(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Timeline column
-            SizedBox(
-              width: 40,
-              child: Column(
-                children: [
-                  // Badge
-                  _statusBadge(stage),
-                  // Connector line
-                  if (!widget.isLast)
-                    Expanded(
-                      child: Container(
-                        width: 2,
-                        color: stage.status == ThreadStatus.completed
-                            ? _stageColor.withValues(alpha: 0.3)
-                            : Colors.grey.shade200,
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 12),
-            // Content
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.only(bottom: 16),
-                child: _buildContent(stage),
-              ),
-            ),
-          ],
-        ),
+      padding: const EdgeInsets.only(left: 20, right: 16, bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Timeline badge + connector
+          Column(
+            children: [
+              _statusBadge(stage),
+              if (!widget.isLast)
+                Container(
+                  width: 2,
+                  height: 16,
+                  color: stage.status == ThreadStatus.completed
+                      ? _stageColor.withValues(alpha: 0.3)
+                      : Colors.grey.shade200,
+                ),
+            ],
+          ),
+          const SizedBox(width: 12),
+          // Content
+          Expanded(child: _buildContent(stage)),
+        ],
       ),
     );
   }
@@ -163,6 +150,20 @@ class _StageThreadCardState extends State<StageThreadCard> {
               ],
             ),
 
+            // Description
+            if (stage.description.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  stage.description,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade500,
+                    height: 1.4,
+                  ),
+                ),
+              ),
+
             // In progress: show prompt + result input
             if (stage.status == ThreadStatus.inProgress) ...[
               const SizedBox(height: 12),
@@ -193,7 +194,7 @@ class _StageThreadCardState extends State<StageThreadCard> {
               if (_showPrompt && stage.promptContent != null)
                 Container(
                   margin: const EdgeInsets.only(top: 8),
-                  constraints: const BoxConstraints(maxHeight: 200),
+                  height: 200,
                   decoration: BoxDecoration(
                     color: const Color(0xFFF8FAFC),
                     borderRadius: BorderRadius.circular(8),
@@ -202,7 +203,6 @@ class _StageThreadCardState extends State<StageThreadCard> {
                   child: Markdown(
                     data: stage.promptContent!,
                     selectable: true,
-                    shrinkWrap: true,
                     padding: const EdgeInsets.all(12),
                   ),
                 ),
@@ -260,7 +260,7 @@ class _StageThreadCardState extends State<StageThreadCard> {
                 if (_showResult)
                   Container(
                     margin: const EdgeInsets.only(top: 8),
-                    constraints: const BoxConstraints(maxHeight: 200),
+                    height: 200,
                     decoration: BoxDecoration(
                       color: const Color(0xFFF8FAFC),
                       borderRadius: BorderRadius.circular(8),
@@ -269,7 +269,6 @@ class _StageThreadCardState extends State<StageThreadCard> {
                     child: Markdown(
                       data: stage.resultContent!,
                       selectable: true,
-                      shrinkWrap: true,
                       padding: const EdgeInsets.all(12),
                     ),
                   ),

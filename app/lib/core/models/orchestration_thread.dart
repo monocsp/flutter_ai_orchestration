@@ -3,6 +3,7 @@ enum ThreadStatus { pending, inProgress, completed, failed }
 class StageThread {
   final int stepNumber;
   final String name;
+  final String description;
   final ThreadStatus status;
   final String? promptPath;
   final String? resultPath;
@@ -14,6 +15,7 @@ class StageThread {
   const StageThread({
     required this.stepNumber,
     required this.name,
+    this.description = '',
     this.status = ThreadStatus.pending,
     this.promptPath,
     this.resultPath,
@@ -26,6 +28,7 @@ class StageThread {
   StageThread copyWith({
     int? stepNumber,
     String? name,
+    String? description,
     ThreadStatus? status,
     String? promptPath,
     String? resultPath,
@@ -37,6 +40,7 @@ class StageThread {
     return StageThread(
       stepNumber: stepNumber ?? this.stepNumber,
       name: name ?? this.name,
+      description: description ?? this.description,
       status: status ?? this.status,
       promptPath: promptPath ?? this.promptPath,
       resultPath: resultPath ?? this.resultPath,
