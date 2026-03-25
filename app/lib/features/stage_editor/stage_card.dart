@@ -111,7 +111,21 @@ class _StageCardState extends State<StageCard> {
               ],
             ),
 
-            const SizedBox(height: 16),
+            // Description
+            if (stage.description.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  stage.description,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade500,
+                    height: 1.4,
+                  ),
+                ),
+              ),
+
+            const SizedBox(height: 12),
             const Divider(),
             const SizedBox(height: 12),
 
