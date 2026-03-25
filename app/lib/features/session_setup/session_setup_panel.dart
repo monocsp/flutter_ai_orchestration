@@ -43,9 +43,22 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
     final agentStatus = ref.watch(agentStatusProvider);
     final theme = Theme.of(context);
 
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
+    return DropTarget(
+      onDragEntered: (_) => setState(() => _isDragging = true),
+      onDragExited: (_) => setState(() => _isDragging = false),
+      onDragDone: (details) {
+        setState(() => _isDragging = false);
+        for (final file in details.files) {
+          final path = file.path;
+          if (path.isNotEmpty) {
+            ref.read(sessionProvider.notifier).setSourceDocument(path);
+            break;
+          }
+        }
+      },
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
         // Section: Title
         _fieldLabel(context, '오케스트레이션 제목'),
         const SizedBox(height: 4),
@@ -60,69 +73,62 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
         const SizedBox(height: 16),
 
         // Section: Document Input
-        _sectionTitle(context, 'INPUT'),
+        _sectionTitle(context, '계획서'),
         const SizedBox(height: 8),
-        DropTarget(
-          onDragEntered: (_) => setState(() => _isDragging = true),
-          onDragExited: (_) => setState(() => _isDragging = false),
-          onDragDone: (details) {
-            setState(() => _isDragging = false);
-            for (final file in details.files) {
-              if (file.path.endsWith('.md') || file.path.endsWith('.txt')) {
-                ref.read(sessionProvider.notifier).setSourceDocument(file.path);
-              }
-            }
-          },
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            height: 100,
-            decoration: BoxDecoration(
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          height: 100,
+          decoration: BoxDecoration(
+            color: _isDragging
+                ? const Color(0xFF0D9488).withValues(alpha: 0.08)
+                : const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
               color: _isDragging
-                  ? const Color(0xFF0D9488).withValues(alpha: 0.08)
-                  : const Color(0xFFF8FAFC),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: _isDragging
-                    ? const Color(0xFF0D9488)
-                    : const Color(0xFFE2E8F0),
-                width: _isDragging ? 2 : 1,
-                strokeAlign: BorderSide.strokeAlignInside,
-              ),
+                  ? const Color(0xFF0D9488)
+                  : const Color(0xFFE2E8F0),
+              width: _isDragging ? 2 : 1,
+              strokeAlign: BorderSide.strokeAlignInside,
             ),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(12),
-              onTap: _pickDocument,
-              child: Center(
-                child: session.sourceDocumentPath != null
-                    ? Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.description_outlined,
-                              size: 24, color: Color(0xFF0D9488)),
-                          const SizedBox(height: 4),
-                          Text(
-                            _fileName(session.sourceDocumentPath!),
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              fontWeight: FontWeight.w600,
-                              color: const Color(0xFF0F172A),
-                            ),
-                            overflow: TextOverflow.ellipsis,
+          ),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: _pickDocument,
+            child: Center(
+              child: session.sourceDocumentPath != null
+                  ? Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.description_outlined,
+                            size: 24, color: Color(0xFF0D9488)),
+                        const SizedBox(height: 4),
+                        Text(
+                          _fileName(session.sourceDocumentPath!),
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFF0F172A),
                           ),
-                        ],
-                      )
-                    : Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.upload_file_outlined,
-                              size: 28, color: Colors.grey.shade400),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Markdown 파일을 드래그하거나 클릭',
-                            style: theme.textTheme.labelMedium,
-                          ),
-                        ],
-                      ),
-              ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    )
+                  : Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          _isDragging ? Icons.file_download : Icons.upload_file_outlined,
+                          size: 28,
+                          color: _isDragging ? const Color(0xFF0D9488) : Colors.grey.shade400,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          _isDragging ? '여기에 놓으세요' : '파일을 드래그하거나 클릭',
+                          style: _isDragging
+                              ? const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF0D9488))
+                              : theme.textTheme.labelMedium,
+                        ),
+                      ],
+                    ),
             ),
           ),
         ),
@@ -354,6 +360,7 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
         ),
         const SizedBox(height: 16),
       ],
+      ),
     );
   }
 
