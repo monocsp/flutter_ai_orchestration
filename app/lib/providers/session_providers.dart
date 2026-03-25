@@ -127,13 +127,21 @@ class SessionNotifier extends Notifier<SessionState> {
   @override
   SessionState build() => SessionState();
 
-  void setSourceDocument(String path) async {
-    final content = await File(path).readAsString();
-    state = state.copyWith(
-      sourceDocumentPath: path,
-      sourceDocumentContent: content,
-      importedFiles: {...state.importedFiles, path}.toList(),
-    );
+  Future<void> setSourceDocument(String path) async {
+    try {
+      final content = await File(path).readAsString();
+      state = state.copyWith(
+        sourceDocumentPath: path,
+        sourceDocumentContent: content,
+        importedFiles: {...state.importedFiles, path}.toList(),
+      );
+    } catch (e) {
+      // 파일 읽기 실패해도 경로는 설정
+      state = state.copyWith(
+        sourceDocumentPath: path,
+        importedFiles: {...state.importedFiles, path}.toList(),
+      );
+    }
   }
 
   void addImportedFile(String path) {
