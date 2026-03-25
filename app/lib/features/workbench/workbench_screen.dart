@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:desktop_drop/desktop_drop.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/models/orchestration_thread.dart';
+import '../../providers/session_providers.dart';
 import '../../providers/thread_providers.dart';
 import '../session_setup/session_setup_panel.dart';
 import '../stage_editor/stage_editor_panel.dart';
@@ -41,10 +43,28 @@ class _WorkbenchScreenState extends ConsumerState<WorkbenchScreen> {
     final currentView = ref.watch(workbenchViewProvider);
     final threadState = ref.watch(threadListProvider);
 
-    return Scaffold(
-      body: Stack(
+    return DropTarget(
+      onDragDone: (details) {
+        for (final file in details.files) {
+          if (file.path.isNotEmpty) {
+            ref.read(sessionProvider.notifier).setSourceDocument(file.path);
+            ref.read(workbenchViewProvider.notifier).setView(WorkbenchView.setup);
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('파일 로드: ${file.name}'),
+                  behavior: SnackBarBehavior.floating,
+                  duration: const Duration(seconds: 2),
+                ),
+              );
+            }
+            break;
+          }
+        }
+      },
+      child: Scaffold(
+        body: Stack(
         children: [
-          // Main UI
           Column(
             children: [
               Expanded(
@@ -85,9 +105,10 @@ class _WorkbenchScreenState extends ConsumerState<WorkbenchScreen> {
             ),
         ],
       ),
+      ),
     );
   }
-}
+}  // _WorkbenchScreenState
 
 /// Narrow left rail with [+] button + thread list icons
 class _SideRail extends ConsumerWidget {
@@ -243,70 +264,123 @@ class _ThreadIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = AppTheme.stageColors[index % AppTheme.stageColors.length];
+    final isCompleted = thread.status == ThreadStatus.completed;
+    final isRunning = thread.status == ThreadStatus.inProgress;
+    final isFailed = thread.status == ThreadStatus.failed;
+    final progress = thread.totalCount > 0
+        ? thread.completedCount / thread.totalCount
+        : 0.0;
+
+    Color borderColor;
+    if (isCompleted) {
+      borderColor = const Color(0xFF22C55E);
+    } else if (isRunning) {
+      borderColor = const Color(0xFF0D9488);
+    } else if (isFailed) {
+      borderColor = const Color(0xFFEF4444);
+    } else {
+      borderColor = const Color(0xFF475569);
+    }
 
     return Tooltip(
       message: '${thread.title}\n${thread.completedCount}/${thread.totalCount} 완료',
       child: Material(
         color: isSelected
-            ? color.withValues(alpha: 0.15)
+            ? borderColor.withValues(alpha: 0.15)
             : Colors.transparent,
         borderRadius: BorderRadius.circular(10),
         child: InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(10),
-          child: Container(
+          child: SizedBox(
             width: 44,
             height: 44,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(10),
-              border: isSelected
-                  ? Border.all(color: color, width: 1.5)
-                  : Border.all(color: const Color(0xFF475569), width: 1),
-            ),
             child: Stack(
               alignment: Alignment.center,
               children: [
-                Text(
-                  '${index + 1}',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: isSelected ? color : Colors.grey.shade400,
-                  ),
-                ),
-                // Status dot
-                Positioned(
-                  top: 4,
-                  right: 4,
-                  child: Container(
-                    width: 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: _dotColor(thread.status),
+                // Progress ring for in-progress
+                if (isRunning)
+                  SizedBox(
+                    width: 40,
+                    height: 40,
+                    child: CircularProgressIndicator(
+                      value: progress,
+                      strokeWidth: 2.5,
+                      backgroundColor: const Color(0xFF475569),
+                      color: const Color(0xFF0D9488),
                     ),
                   ),
-                ),
+                // Completed ring
+                if (isCompleted)
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                          color: const Color(0xFF22C55E), width: 2.5),
+                    ),
+                  ),
+                // Failed ring
+                if (isFailed)
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                          color: const Color(0xFFEF4444), width: 2.5),
+                    ),
+                  ),
+                // Pending ring
+                if (!isRunning && !isCompleted && !isFailed)
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                          color: const Color(0xFF475569), width: 1),
+                    ),
+                  ),
+                // Center content
+                if (isCompleted)
+                  const Icon(Icons.check_rounded,
+                      size: 20, color: Color(0xFF22C55E))
+                else if (isFailed)
+                  const Icon(Icons.close_rounded,
+                      size: 20, color: Color(0xFFEF4444))
+                else
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '${index + 1}',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: isRunning
+                              ? const Color(0xFF0D9488)
+                              : Colors.grey.shade400,
+                        ),
+                      ),
+                      if (isRunning)
+                        Text(
+                          '${thread.completedCount}/${thread.totalCount}',
+                          style: const TextStyle(
+                            fontSize: 8,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF0D9488),
+                          ),
+                        ),
+                    ],
+                  ),
               ],
             ),
           ),
         ),
       ),
     );
-  }
-
-  Color _dotColor(ThreadStatus status) {
-    switch (status) {
-      case ThreadStatus.inProgress:
-        return const Color(0xFF0D9488);
-      case ThreadStatus.completed:
-        return const Color(0xFF22C55E);
-      case ThreadStatus.failed:
-        return const Color(0xFFEF4444);
-      case ThreadStatus.pending:
-        return Colors.grey.shade500;
-    }
   }
 }
 

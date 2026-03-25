@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
 import '../../core/models/agent_provider.dart';
 import '../../core/models/orchestration_preset.dart';
@@ -20,7 +19,6 @@ class SessionSetupPanel extends ConsumerStatefulWidget {
 }
 
 class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
-  bool _isDragging = false;
   final _riskController = TextEditingController();
   final _titleController = TextEditingController();
 
@@ -43,20 +41,7 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
     final agentStatus = ref.watch(agentStatusProvider);
     final theme = Theme.of(context);
 
-    return DropTarget(
-      onDragEntered: (_) => setState(() => _isDragging = true),
-      onDragExited: (_) => setState(() => _isDragging = false),
-      onDragDone: (details) {
-        setState(() => _isDragging = false);
-        for (final file in details.files) {
-          final path = file.path;
-          if (path.isNotEmpty) {
-            ref.read(sessionProvider.notifier).setSourceDocument(path);
-            break;
-          }
-        }
-      },
-      child: ListView(
+    return ListView(
         padding: const EdgeInsets.all(16),
         children: [
         // Section: Title
@@ -75,19 +60,13 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
         // Section: Document Input
         _sectionTitle(context, '계획서'),
         const SizedBox(height: 8),
-        AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
+        Container(
           height: 100,
           decoration: BoxDecoration(
-            color: _isDragging
-                ? const Color(0xFF0D9488).withValues(alpha: 0.08)
-                : const Color(0xFFF8FAFC),
+            color: const Color(0xFFF8FAFC),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: _isDragging
-                  ? const Color(0xFF0D9488)
-                  : const Color(0xFFE2E8F0),
-              width: _isDragging ? 2 : 1,
+              color: const Color(0xFFE2E8F0),
               strokeAlign: BorderSide.strokeAlignInside,
             ),
           ),
@@ -115,17 +94,12 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
                   : Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(
-                          _isDragging ? Icons.file_download : Icons.upload_file_outlined,
-                          size: 28,
-                          color: _isDragging ? const Color(0xFF0D9488) : Colors.grey.shade400,
-                        ),
+                        Icon(Icons.upload_file_outlined,
+                            size: 28, color: Colors.grey.shade400),
                         const SizedBox(height: 4),
                         Text(
-                          _isDragging ? '여기에 놓으세요' : '파일을 드래그하거나 클릭',
-                          style: _isDragging
-                              ? const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF0D9488))
-                              : theme.textTheme.labelMedium,
+                          '파일을 드래그하거나 클릭',
+                          style: theme.textTheme.labelMedium,
                         ),
                       ],
                     ),
@@ -360,7 +334,6 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
         ),
         const SizedBox(height: 16),
       ],
-      ),
     );
   }
 
