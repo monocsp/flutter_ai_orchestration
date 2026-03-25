@@ -8,6 +8,8 @@ import '../../core/models/orchestration_preset.dart';
 import '../../core/models/session_config.dart';
 import '../../providers/session_providers.dart';
 import '../../providers/agent_providers.dart';
+import '../../providers/thread_providers.dart';
+import '../workbench/workbench_screen.dart';
 
 class SessionSetupPanel extends ConsumerStatefulWidget {
   const SessionSetupPanel({super.key});
@@ -19,6 +21,7 @@ class SessionSetupPanel extends ConsumerStatefulWidget {
 class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
   bool _isDragging = false;
   final _riskController = TextEditingController();
+  final _titleController = TextEditingController();
 
   @override
   void initState() {
@@ -29,6 +32,7 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
   @override
   void dispose() {
     _riskController.dispose();
+    _titleController.dispose();
     super.dispose();
   }
 
@@ -41,6 +45,19 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        // Section: Title
+        _fieldLabel(context, '오케스트레이션 제목'),
+        const SizedBox(height: 4),
+        TextField(
+          controller: _titleController,
+          style: const TextStyle(fontSize: 13),
+          decoration: InputDecoration(
+            hintText: '비워두면 자동 번호 부여',
+            hintStyle: TextStyle(fontSize: 12, color: Colors.grey.shade400),
+          ),
+        ),
+        const SizedBox(height: 16),
+
         // Section: Document Input
         _sectionTitle(context, 'INPUT'),
         const SizedBox(height: 8),
@@ -261,7 +278,7 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
 
         const SizedBox(height: 24),
 
-        // Generate button
+        // Orchestration start button
         SizedBox(
           width: double.infinity,
           height: 44,
@@ -270,13 +287,18 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
                 ? null
                 : () async {
                     try {
-                      final artifact = await ref
-                          .read(sessionProvider.notifier)
-                          .generateSession();
-                      if (artifact != null && context.mounted) {
+                      final title = _titleController.text;
+                      await ref
+                          .read(threadListProvider.notifier)
+                          .startOrchestration(customTitle: title);
+                      _titleController.clear();
+                      // 스레드 뷰로 전환
+                      ref.read(workbenchViewProvider.notifier).setView(
+                          WorkbenchView.thread);
+                      if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('세션 생성 완료: ${artifact.sessionDirPath}'),
+                          const SnackBar(
+                            content: Text('오케스트레이션이 시작되었습니다'),
                             behavior: SnackBarBehavior.floating,
                           ),
                         );
@@ -301,7 +323,7 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
                         CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                   )
                 : const Icon(Icons.play_arrow_rounded, size: 20),
-            label: Text(session.isGenerating ? '생성 중...' : '세션 생성'),
+            label: Text(session.isGenerating ? '시작 중...' : '오케스트레이션 시작'),
           ),
         ),
         const SizedBox(height: 16),
