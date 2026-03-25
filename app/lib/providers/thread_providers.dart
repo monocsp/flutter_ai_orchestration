@@ -1,27 +1,33 @@
 import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/models/orchestration_thread.dart';
+import '../core/models/orchestration_stage.dart';
 import '../core/services/agent_detection_service.dart';
+import '../core/services/agent_runner_service.dart';
 import 'session_providers.dart';
 
 class ThreadListState {
   final List<OrchestrationThread> threads;
   final String? selectedThreadId;
+  final bool isStopped;
 
   const ThreadListState({
     this.threads = const [],
     this.selectedThreadId,
+    this.isStopped = false,
   });
 
   ThreadListState copyWith({
     List<OrchestrationThread>? threads,
     String? selectedThreadId,
     bool clearSelection = false,
+    bool? isStopped,
   }) {
     return ThreadListState(
       threads: threads ?? this.threads,
       selectedThreadId:
           clearSelection ? null : (selectedThreadId ?? this.selectedThreadId),
+      isStopped: isStopped ?? this.isStopped,
     );
   }
 
@@ -38,7 +44,42 @@ class ThreadListNotifier extends Notifier<ThreadListState> {
   @override
   ThreadListState build() => const ThreadListState();
 
+  /// 오케스트레이션 중단
+  void stopOrchestration() {
+    state = state.copyWith(isStopped: true);
+
+    // 진행 중인 스레드의 현재 단계를 실패로
+    final thread = state.selectedThread;
+    if (thread == null || thread.status != ThreadStatus.inProgress) return;
+
+    final threadIdx = state.threads.indexWhere((t) => t.id == thread.id);
+    if (threadIdx < 0) return;
+
+    final stages = List<StageThread>.from(thread.stages);
+    for (var i = 0; i < stages.length; i++) {
+      if (stages[i].status == ThreadStatus.inProgress) {
+        stages[i] = stages[i].copyWith(
+          status: ThreadStatus.failed,
+          resultContent: '> 사용자에 의해 중단되었습니다.',
+          completedAt: DateTime.now(),
+        );
+        break;
+      }
+    }
+
+    final updatedThread = thread.copyWith(
+      stages: stages,
+      status: ThreadStatus.failed,
+    );
+    final threads = List<OrchestrationThread>.from(state.threads);
+    threads[threadIdx] = updatedThread;
+    state = state.copyWith(threads: threads);
+  }
+
+  /// 전체 오케스트레이션 자동 실행
   Future<void> startOrchestration({String? customTitle}) async {
+    state = state.copyWith(isStopped: false);
+
     final session = ref.read(sessionProvider);
     final now = DateTime.now();
 
@@ -46,14 +87,11 @@ class ThreadListNotifier extends Notifier<ThreadListState> {
         ? customTitle.trim()
         : '오케스트레이션-${state.threads.length + 1}';
 
-    // 임시 thread ID (세션 생성 전)
-    final tempId =
-        'thread_${now.millisecondsSinceEpoch}';
-
-    // Step 0: Agent 상태 확인 단계를 맨 앞에 추가
+    final tempId = 'thread_${now.millisecondsSinceEpoch}';
     final analysisAgentName = session.analysisAgent.displayName;
     final criticAgentName = session.criticAgent.displayName;
 
+    // Step 0: Agent 상태 확인
     final agentCheckStage = StageThread(
       stepNumber: 0,
       name: 'Agent 상태 확인',
@@ -63,7 +101,6 @@ class ThreadListNotifier extends Notifier<ThreadListState> {
       startedAt: now,
     );
 
-    // 나머지 단계는 pending으로
     final enabledStages = session.stages.where((s) => s.enabled).toList();
     final pendingStages = enabledStages
         .map((stage) => StageThread(
@@ -88,7 +125,7 @@ class ThreadListNotifier extends Notifier<ThreadListState> {
       selectedThreadId: tempId,
     );
 
-    // Agent 상태 확인 실행
+    // Agent 상태 확인
     final detection = AgentDetectionService();
     final allStatuses = await detection.detectAll();
 
@@ -102,31 +139,28 @@ class ThreadListNotifier extends Notifier<ThreadListState> {
     final analysisOk = analysisStatus?.installed == true;
     final criticOk = criticStatus?.installed == true;
 
-    // 결과 텍스트 생성
     final resultLines = StringBuffer();
     resultLines.writeln('## Agent 상태 확인 결과\n');
-
     resultLines.writeln('### 분석 Agent: $analysisAgentName');
-    if (analysisStatus != null && analysisOk) {
+    if (analysisOk) {
       resultLines.writeln('- 상태: 설치됨');
-      if (analysisStatus.detectedPath != null) {
-        resultLines.writeln('- 경로: `${analysisStatus.detectedPath}`');
+      if (analysisStatus?.detectedPath != null) {
+        resultLines.writeln('- 경로: `${analysisStatus!.detectedPath}`');
       }
-      if (analysisStatus.version != null) {
-        resultLines.writeln('- 버전: ${analysisStatus.version}');
+      if (analysisStatus?.version != null) {
+        resultLines.writeln('- 버전: ${analysisStatus!.version}');
       }
     } else {
       resultLines.writeln('- 상태: **미설치 또는 실행 불가**');
     }
-
     resultLines.writeln('\n### 검토 Agent: $criticAgentName');
-    if (criticStatus != null && criticOk) {
+    if (criticOk) {
       resultLines.writeln('- 상태: 설치됨');
-      if (criticStatus.detectedPath != null) {
-        resultLines.writeln('- 경로: `${criticStatus.detectedPath}`');
+      if (criticStatus?.detectedPath != null) {
+        resultLines.writeln('- 경로: `${criticStatus!.detectedPath}`');
       }
-      if (criticStatus.version != null) {
-        resultLines.writeln('- 버전: ${criticStatus.version}');
+      if (criticStatus?.version != null) {
+        resultLines.writeln('- 버전: ${criticStatus!.version}');
       }
     } else {
       resultLines.writeln('- 상태: **미설치 또는 실행 불가**');
@@ -134,84 +168,114 @@ class ThreadListNotifier extends Notifier<ThreadListState> {
 
     final bothOk = analysisOk && criticOk;
     if (bothOk) {
-      resultLines.writeln('\n> 모든 Agent가 정상입니다. 오케스트레이션을 진행합니다.');
+      resultLines.writeln('\n> 모든 Agent가 정상입니다. 오케스트레이션을 자동 진행합니다.');
     } else {
       resultLines.writeln(
-          '\n> **경고**: 일부 Agent가 설치되지 않았습니다. 해당 Agent의 CLI를 설치한 후 다시 시도하세요.');
+          '\n> **경고**: 일부 Agent가 설치되지 않았습니다.');
     }
 
-    // Step 0 완료로 업데이트
-    final threadIdx = state.threads.indexWhere((t) => t.id == tempId);
-    if (threadIdx < 0) return;
-
-    final currentThread = state.threads[threadIdx];
-    final stages = List<StageThread>.from(currentThread.stages);
-
-    stages[0] = stages[0].copyWith(
+    // Step 0 완료
+    _updateStage(tempId, 0, (s) => s.copyWith(
       status: bothOk ? ThreadStatus.completed : ThreadStatus.failed,
       resultContent: resultLines.toString(),
       completedAt: DateTime.now(),
-    );
+    ));
 
     if (!bothOk) {
-      // Agent 실패 → 스레드도 실패
-      final failedThread = currentThread.copyWith(
-        stages: stages,
-        status: ThreadStatus.failed,
-      );
-      final threads = List<OrchestrationThread>.from(state.threads);
-      threads[threadIdx] = failedThread;
-      state = state.copyWith(threads: threads);
+      _updateThreadStatus(tempId, ThreadStatus.failed);
       return;
     }
 
-    // Agent 확인 통과 → 세션 파일 생성
+    // 세션 파일 생성
     final sessionNotifier = ref.read(sessionProvider.notifier);
     final artifact = await sessionNotifier.generateSession();
     if (artifact == null) return;
 
-    // 1단계를 진행 중으로 전환 + 프롬프트 로드
-    if (stages.length > 1) {
+    // 단계에 경로 할당
+    _assignArtifactPaths(tempId, artifact);
+
+    // 자동 실행 루프
+    final runner = AgentRunnerService();
+
+    for (var i = 1; i < _getThread(tempId)!.stages.length; i++) {
+      if (state.isStopped) break;
+
+      final currentThread = _getThread(tempId)!;
+      final stage = currentThread.stages[i];
+      final artifactIdx = i - 1;
+
+      // 이 단계를 진행 중으로
       String? promptContent;
-      final promptPath =
-          artifact.promptPaths.isNotEmpty ? artifact.promptPaths[0] : null;
-      if (promptPath != null) {
+      if (stage.promptPath != null) {
         try {
-          promptContent = await File(promptPath).readAsString();
+          promptContent = await File(stage.promptPath!).readAsString();
         } catch (_) {}
       }
-      stages[1] = stages[1].copyWith(
+
+      _updateStage(tempId, i, (s) => s.copyWith(
         status: ThreadStatus.inProgress,
-        promptPath: promptPath,
-        resultPath: artifact.resultPlaceholderPaths.isNotEmpty
-            ? artifact.resultPlaceholderPaths[0]
-            : null,
         promptContent: promptContent,
         startedAt: DateTime.now(),
+      ));
+
+      if (state.isStopped) break;
+
+      // AI 담당 agent 결정
+      final originalStage = enabledStages[artifactIdx];
+      final agentId = originalStage.role == StageRole.analysis
+          ? session.analysisAgent.id
+          : session.criticAgent.id;
+
+      // AI CLI 실행
+      final result = await runner.run(
+        agentId: agentId,
+        promptContent: promptContent ?? '',
+        workingDir: session.projectRootPath,
       );
+
+      if (state.isStopped) break;
+
+      if (result.success) {
+        // 결과 파일 저장
+        if (stage.resultPath != null) {
+          await File(stage.resultPath!).writeAsString(result.output);
+        }
+
+        _updateStage(tempId, i, (s) => s.copyWith(
+          status: ThreadStatus.completed,
+          resultContent: result.output,
+          completedAt: DateTime.now(),
+        ));
+      } else {
+        final errorMsg = StringBuffer();
+        errorMsg.writeln('## 실행 실패\n');
+        errorMsg.writeln('- Exit code: ${result.exitCode}');
+        if (result.error != null) {
+          errorMsg.writeln('- 오류: ${result.error}');
+        }
+        if (result.output.isNotEmpty) {
+          errorMsg.writeln('\n### 출력\n```\n${result.output}\n```');
+        }
+
+        _updateStage(tempId, i, (s) => s.copyWith(
+          status: ThreadStatus.failed,
+          resultContent: errorMsg.toString(),
+          completedAt: DateTime.now(),
+        ));
+
+        _updateThreadStatus(tempId, ThreadStatus.failed);
+        return;
+      }
     }
 
-    // 나머지 단계에도 경로 할당
-    for (var i = 2; i < stages.length; i++) {
-      final artifactIdx = i - 1; // stages[0]이 agent check이므로
-      stages[i] = stages[i].copyWith(
-        promptPath: artifactIdx < artifact.promptPaths.length
-            ? artifact.promptPaths[artifactIdx]
-            : null,
-        resultPath: artifactIdx < artifact.resultPlaceholderPaths.length
-            ? artifact.resultPlaceholderPaths[artifactIdx]
-            : null,
-      );
+    // 모든 단계 완료 확인
+    final finalThread = _getThread(tempId);
+    if (finalThread != null) {
+      final allDone = finalThread.stages
+          .every((s) => s.status == ThreadStatus.completed);
+      _updateThreadStatus(
+          tempId, allDone ? ThreadStatus.completed : ThreadStatus.failed);
     }
-
-    final updatedThread = currentThread.copyWith(
-      stages: stages,
-      sessionDirPath: artifact.sessionDirPath,
-    );
-
-    final threads = List<OrchestrationThread>.from(state.threads);
-    threads[threadIdx] = updatedThread;
-    state = state.copyWith(threads: threads);
   }
 
   void selectThread(String threadId) {
@@ -222,52 +286,60 @@ class ThreadListNotifier extends Notifier<ThreadListState> {
     state = state.copyWith(clearSelection: true);
   }
 
-  Future<void> submitStageResult(
-      String threadId, int stageIndex, String resultContent) async {
+  // ─── Helpers ───
+
+  OrchestrationThread? _getThread(String id) {
+    return state.threads.cast<OrchestrationThread?>().firstWhere(
+          (t) => t!.id == id,
+          orElse: () => null,
+        );
+  }
+
+  void _updateStage(
+      String threadId, int index, StageThread Function(StageThread) updater) {
     final threadIdx = state.threads.indexWhere((t) => t.id == threadId);
     if (threadIdx < 0) return;
 
     final thread = state.threads[threadIdx];
     final stages = List<StageThread>.from(thread.stages);
-    final now = DateTime.now();
+    stages[index] = updater(stages[index]);
 
-    stages[stageIndex] = stages[stageIndex].copyWith(
-      status: ThreadStatus.completed,
-      resultContent: resultContent,
-      completedAt: now,
-    );
+    final threads = List<OrchestrationThread>.from(state.threads);
+    threads[threadIdx] = thread.copyWith(stages: stages);
+    state = state.copyWith(threads: threads);
+  }
 
-    final resultPath = stages[stageIndex].resultPath;
-    if (resultPath != null) {
-      await File(resultPath).writeAsString(resultContent);
-    }
+  void _updateThreadStatus(String threadId, ThreadStatus status) {
+    final threadIdx = state.threads.indexWhere((t) => t.id == threadId);
+    if (threadIdx < 0) return;
 
-    // 다음 단계 진행
-    final hasNext = stageIndex + 1 < stages.length;
-    if (hasNext) {
-      final nextStage = stages[stageIndex + 1];
-      String? promptContent;
-      if (nextStage.promptPath != null) {
-        try {
-          promptContent = await File(nextStage.promptPath!).readAsString();
-        } catch (_) {}
-      }
-      stages[stageIndex + 1] = nextStage.copyWith(
-        status: ThreadStatus.inProgress,
-        promptContent: promptContent,
-        startedAt: now,
+    final threads = List<OrchestrationThread>.from(state.threads);
+    threads[threadIdx] = threads[threadIdx].copyWith(status: status);
+    state = state.copyWith(threads: threads);
+  }
+
+  void _assignArtifactPaths(String threadId, dynamic artifact) {
+    final threadIdx = state.threads.indexWhere((t) => t.id == threadId);
+    if (threadIdx < 0) return;
+
+    final thread = state.threads[threadIdx];
+    final stages = List<StageThread>.from(thread.stages);
+
+    for (var i = 1; i < stages.length; i++) {
+      final artifactIdx = i - 1;
+      stages[i] = stages[i].copyWith(
+        promptPath: artifactIdx < artifact.promptPaths.length
+            ? artifact.promptPaths[artifactIdx]
+            : null,
+        resultPath: artifactIdx < artifact.resultPlaceholderPaths.length
+            ? artifact.resultPlaceholderPaths[artifactIdx]
+            : null,
       );
     }
 
-    final allCompleted =
-        stages.every((s) => s.status == ThreadStatus.completed);
-    final updatedThread = thread.copyWith(
-      stages: stages,
-      status: allCompleted ? ThreadStatus.completed : ThreadStatus.inProgress,
-    );
-
     final threads = List<OrchestrationThread>.from(state.threads);
-    threads[threadIdx] = updatedThread;
+    threads[threadIdx] =
+        thread.copyWith(stages: stages, sessionDirPath: artifact.sessionDirPath);
     state = state.copyWith(threads: threads);
   }
 }

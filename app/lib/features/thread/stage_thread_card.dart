@@ -8,14 +8,12 @@ class StageThreadCard extends StatefulWidget {
   final StageThread stage;
   final int index;
   final bool isLast;
-  final ValueChanged<String>? onSubmitResult;
 
   const StageThreadCard({
     super.key,
     required this.stage,
     required this.index,
     this.isLast = false,
-    this.onSubmitResult,
   });
 
   @override
@@ -23,15 +21,8 @@ class StageThreadCard extends StatefulWidget {
 }
 
 class _StageThreadCardState extends State<StageThreadCard> {
-  final _resultController = TextEditingController();
   bool _showPrompt = false;
-  bool _showResult = false;
-
-  @override
-  void dispose() {
-    _resultController.dispose();
-    super.dispose();
-  }
+  bool _showResult = true;
 
   Color get _stageColor =>
       AppTheme.stageColors[widget.index % AppTheme.stageColors.length];
@@ -60,7 +51,6 @@ class _StageThreadCardState extends State<StageThreadCard> {
             ],
           ),
           const SizedBox(width: 12),
-          // Content
           Expanded(child: _buildContent(stage)),
         ],
       ),
@@ -100,11 +90,11 @@ class _StageThreadCardState extends State<StageThreadCard> {
       case ThreadStatus.completed:
         return const Icon(Icons.check, size: 16, color: Colors.white);
       case ThreadStatus.inProgress:
-        return Text(
-          '${stage.stepNumber}',
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
+        return SizedBox(
+          width: 18,
+          height: 18,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
             color: _stageColor,
           ),
         );
@@ -135,17 +125,18 @@ class _StageThreadCardState extends State<StageThreadCard> {
             // Header
             Row(
               children: [
-                Text(
-                  stage.name,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: stage.status == ThreadStatus.pending
-                        ? Colors.grey.shade400
-                        : const Color(0xFF0F172A),
+                Expanded(
+                  child: Text(
+                    stage.name,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: stage.status == ThreadStatus.pending
+                          ? Colors.grey.shade400
+                          : const Color(0xFF0F172A),
+                    ),
                   ),
                 ),
-                const Spacer(),
                 _statusLabel(stage.status),
               ],
             ),
@@ -164,33 +155,63 @@ class _StageThreadCardState extends State<StageThreadCard> {
                 ),
               ),
 
-            // In progress: show prompt + result input
+            // In progress: show spinner + prompt
             if (stage.status == ThreadStatus.inProgress) ...[
               const SizedBox(height: 12),
-              // Prompt section
-              _expandableSection(
-                title: '프롬프트',
-                icon: Icons.description_outlined,
-                isExpanded: _showPrompt,
-                onToggle: () => setState(() => _showPrompt = !_showPrompt),
-                trailing: stage.promptContent != null
-                    ? IconButton(
-                        icon: const Icon(Icons.copy, size: 16),
-                        tooltip: '프롬프트 복사',
-                        onPressed: () {
-                          Clipboard.setData(
-                              ClipboardData(text: stage.promptContent!));
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('프롬프트가 클립보드에 복사되었습니다'),
-                              duration: Duration(seconds: 1),
-                              behavior: SnackBarBehavior.floating,
-                            ),
-                          );
-                        },
-                      )
-                    : null,
+              // Running indicator
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: _stageColor.withValues(alpha: 0.05),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: _stageColor.withValues(alpha: 0.2)),
+                ),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: _stageColor,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      'AI가 분석 중입니다...',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: _stageColor,
+                      ),
+                    ),
+                  ],
+                ),
               ),
+              const SizedBox(height: 8),
+              // Prompt (collapsible)
+              if (stage.promptContent != null)
+                _expandableSection(
+                  title: '프롬프트 보기',
+                  icon: Icons.description_outlined,
+                  isExpanded: _showPrompt,
+                  onToggle: () => setState(() => _showPrompt = !_showPrompt),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.copy, size: 14),
+                    tooltip: '프롬프트 복사',
+                    onPressed: () {
+                      Clipboard.setData(
+                          ClipboardData(text: stage.promptContent!));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('클립보드에 복사되었습니다'),
+                          duration: Duration(seconds: 1),
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                    },
+                  ),
+                ),
               if (_showPrompt && stage.promptContent != null)
                 Container(
                   margin: const EdgeInsets.only(top: 8),
@@ -206,73 +227,48 @@ class _StageThreadCardState extends State<StageThreadCard> {
                     padding: const EdgeInsets.all(12),
                   ),
                 ),
-
-              const SizedBox(height: 12),
-              // Result input
-              Text(
-                'AI 결과를 붙여넣으세요',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.grey.shade600,
-                ),
-              ),
-              const SizedBox(height: 6),
-              TextField(
-                controller: _resultController,
-                maxLines: 6,
-                style: const TextStyle(fontSize: 13, height: 1.5),
-                decoration: InputDecoration(
-                  hintText: 'AI CLI에서 받은 결과를 여기에 붙여넣으세요...',
-                  hintStyle: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey.shade400,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 10),
-              Align(
-                alignment: Alignment.centerRight,
-                child: ElevatedButton.icon(
-                  onPressed: () {
-                    final text = _resultController.text.trim();
-                    if (text.isNotEmpty) {
-                      widget.onSubmitResult?.call(text);
-                      _resultController.clear();
-                    }
-                  },
-                  icon: const Icon(Icons.check, size: 16),
-                  label: const Text('완료 및 다음 단계'),
-                ),
-              ),
             ],
 
-            // Completed: show result preview
-            if (stage.status == ThreadStatus.completed) ...[
+            // Completed: show result
+            if (stage.status == ThreadStatus.completed &&
+                stage.resultContent != null) ...[
               const SizedBox(height: 8),
-              if (stage.resultContent != null) ...[
-                _expandableSection(
-                  title: '결과',
-                  icon: Icons.check_circle_outline,
-                  isExpanded: _showResult,
-                  onToggle: () => setState(() => _showResult = !_showResult),
+              _expandableSection(
+                title: '결과',
+                icon: Icons.check_circle_outline,
+                isExpanded: _showResult,
+                onToggle: () => setState(() => _showResult = !_showResult),
+                trailing: IconButton(
+                  icon: const Icon(Icons.copy, size: 14),
+                  tooltip: '결과 복사',
+                  onPressed: () {
+                    Clipboard.setData(
+                        ClipboardData(text: stage.resultContent!));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('결과가 클립보드에 복사되었습니다'),
+                        duration: Duration(seconds: 1),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  },
                 ),
-                if (_showResult)
-                  Container(
-                    margin: const EdgeInsets.only(top: 8),
-                    height: 200,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF8FAFC),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
-                    ),
-                    child: Markdown(
-                      data: stage.resultContent!,
-                      selectable: true,
-                      padding: const EdgeInsets.all(12),
-                    ),
+              ),
+              if (_showResult)
+                Container(
+                  margin: const EdgeInsets.only(top: 8),
+                  height: 300,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
                   ),
-              ],
+                  child: Markdown(
+                    data: stage.resultContent!,
+                    selectable: true,
+                    padding: const EdgeInsets.all(12),
+                  ),
+                ),
               if (stage.completedAt != null)
                 Padding(
                   padding: const EdgeInsets.only(top: 6),
@@ -283,12 +279,62 @@ class _StageThreadCardState extends State<StageThreadCard> {
                 ),
             ],
 
-            // Pending: minimal info
+            // Failed: show error
+            if (stage.status == ThreadStatus.failed &&
+                stage.resultContent != null) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFEF2F2),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFFECACA)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SelectableText(
+                      stage.resultContent!,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF991B1B),
+                        height: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        onPressed: () {
+                          Clipboard.setData(
+                              ClipboardData(text: stage.resultContent!));
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('에러 내용이 클립보드에 복사되었습니다'),
+                              duration: Duration(seconds: 1),
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.copy, size: 14),
+                        label: const Text('에러 복사'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: const Color(0xFFDC2626),
+                          textStyle: const TextStyle(fontSize: 11),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            // Pending
             if (stage.status == ThreadStatus.pending)
               Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(
-                  '이전 단계가 완료되면 진행됩니다',
+                  '이전 단계가 완료되면 자동으로 진행됩니다',
                   style: TextStyle(fontSize: 11, color: Colors.grey.shade400),
                 ),
               ),
@@ -303,7 +349,7 @@ class _StageThreadCardState extends State<StageThreadCard> {
     Color color;
     switch (status) {
       case ThreadStatus.inProgress:
-        text = '진행 중';
+        text = 'AI 실행 중';
         color = _stageColor;
       case ThreadStatus.completed:
         text = '완료';

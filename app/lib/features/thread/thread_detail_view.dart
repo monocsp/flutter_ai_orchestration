@@ -64,7 +64,24 @@ class ThreadDetailView extends ConsumerWidget {
                   ],
                 ),
               ),
-              if (thread.status == ThreadStatus.completed)
+              // Status badge or stop button
+              if (thread.status == ThreadStatus.inProgress)
+                ElevatedButton.icon(
+                  onPressed: () {
+                    ref.read(threadListProvider.notifier).stopOrchestration();
+                  },
+                  icon: const Icon(Icons.stop_rounded, size: 16),
+                  label: const Text('중단'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFEF4444),
+                    foregroundColor: Colors.white,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    textStyle: const TextStyle(
+                        fontSize: 12, fontWeight: FontWeight.w600),
+                  ),
+                )
+              else if (thread.status == ThreadStatus.completed)
                 Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -80,12 +97,29 @@ class ThreadDetailView extends ConsumerWidget {
                       color: Color(0xFF22C55E),
                     ),
                   ),
+                )
+              else if (thread.status == ThreadStatus.failed)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEF4444).withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Text(
+                    '실패',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFFEF4444),
+                    ),
+                  ),
                 ),
             ],
           ),
         ),
 
-        // Stage timeline (chat-style)
+        // Stage timeline
         Expanded(
           child: ListView.builder(
             padding: const EdgeInsets.only(top: 16, bottom: 24),
@@ -96,14 +130,6 @@ class ThreadDetailView extends ConsumerWidget {
                 stage: stage,
                 index: index,
                 isLast: index == thread.stages.length - 1,
-                onSubmitResult: stage.status == ThreadStatus.inProgress
-                    ? (resultContent) {
-                        ref
-                            .read(threadListProvider.notifier)
-                            .submitStageResult(
-                                thread.id, index, resultContent);
-                      }
-                    : null,
               );
             },
           ),
@@ -115,12 +141,12 @@ class ThreadDetailView extends ConsumerWidget {
   Widget _statusIcon(ThreadStatus status) {
     switch (status) {
       case ThreadStatus.inProgress:
-        return SizedBox(
+        return const SizedBox(
           width: 20,
           height: 20,
           child: CircularProgressIndicator(
             strokeWidth: 2,
-            color: const Color(0xFF0D9488),
+            color: Color(0xFF0D9488),
           ),
         );
       case ThreadStatus.completed:
