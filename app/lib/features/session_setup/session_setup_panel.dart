@@ -21,6 +21,7 @@ class SessionSetupPanel extends ConsumerStatefulWidget {
 class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
   final _riskController = TextEditingController();
   final _titleController = TextEditingController();
+  bool _isStarting = false;
 
   @override
   void initState() {
@@ -284,31 +285,27 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
 
         const SizedBox(height: 24),
 
-        // Orchestration start button
+        // Orchestration start button (throttled)
         SizedBox(
           width: double.infinity,
           height: 44,
           child: ElevatedButton.icon(
-            onPressed: session.sourceDocumentPath == null || session.isGenerating
+            onPressed: session.sourceDocumentPath == null ||
+                    session.isGenerating ||
+                    _isStarting
                 ? null
                 : () async {
+                    setState(() => _isStarting = true);
                     try {
                       final title = _titleController.text;
-                      await ref
-                          .read(threadListProvider.notifier)
-                          .startOrchestration(customTitle: title);
-                      _titleController.clear();
-                      // 스레드 뷰로 전환
+                      // 즉시 스레드 뷰로 전환
                       ref.read(workbenchViewProvider.notifier).setView(
                           WorkbenchView.thread);
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('오케스트레이션이 시작되었습니다'),
-                            behavior: SnackBarBehavior.floating,
-                          ),
-                        );
-                      }
+                      _titleController.clear();
+                      // 비동기로 오케스트레이션 시작 (await 하지 않음 — 백그라운드 진행)
+                      ref
+                          .read(threadListProvider.notifier)
+                          .startOrchestration(customTitle: title);
                     } catch (e) {
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
@@ -319,17 +316,22 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
                           ),
                         );
                       }
+                    } finally {
+                      // 3초 후 버튼 재활성화
+                      await Future.delayed(const Duration(seconds: 3));
+                      if (mounted) setState(() => _isStarting = false);
                     }
                   },
-            icon: session.isGenerating
+            icon: _isStarting || session.isGenerating
                 ? const SizedBox(
                     width: 18,
                     height: 18,
-                    child:
-                        CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white),
                   )
                 : const Icon(Icons.play_arrow_rounded, size: 20),
-            label: Text(session.isGenerating ? '시작 중...' : '오케스트레이션 시작'),
+            label: Text(
+                _isStarting || session.isGenerating ? '시작 중...' : '오케스트레이션 시작'),
           ),
         ),
         const SizedBox(height: 16),
