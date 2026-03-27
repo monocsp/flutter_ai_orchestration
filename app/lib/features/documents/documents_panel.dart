@@ -14,8 +14,8 @@ class DocumentsPanel extends ConsumerStatefulWidget {
 class _DocumentsPanelState extends ConsumerState<DocumentsPanel>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  String? _selectedResultFile;
-  String? _selectedResultContent;
+  String? _selectedFilePath;
+  String? _selectedFileContent;
 
   @override
   void initState() {
@@ -29,13 +29,23 @@ class _DocumentsPanelState extends ConsumerState<DocumentsPanel>
     super.dispose();
   }
 
+  Future<void> _selectFile(String path) async {
+    try {
+      final content = await File(path).readAsString();
+      setState(() {
+        _selectedFilePath = path;
+        _selectedFileContent = content;
+      });
+    } catch (_) {}
+  }
+
   @override
   Widget build(BuildContext context) {
     final session = ref.watch(sessionProvider);
+    final artifact = session.lastArtifact;
 
     return Column(
       children: [
-        // Tab bar
         Container(
           decoration: const BoxDecoration(
             border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
@@ -47,20 +57,17 @@ class _DocumentsPanelState extends ConsumerState<DocumentsPanel>
               fontWeight: FontWeight.w600,
             ),
             tabs: const [
-              Tab(text: '입력 문서'),
-              Tab(text: '결과 파일'),
+              Tab(text: '입력/프롬프트'),
+              Tab(text: '결과'),
             ],
           ),
         ),
-
         Expanded(
           child: TabBarView(
             controller: _tabController,
             children: [
-              // Tab 1: Input documents
-              _buildInputTab(session),
-              // Tab 2: Result files
-              _buildResultsTab(session),
+              _buildInputTab(session, artifact),
+              _buildResultsTab(session, artifact),
             ],
           ),
         ),
@@ -68,8 +75,44 @@ class _DocumentsPanelState extends ConsumerState<DocumentsPanel>
     );
   }
 
-  Widget _buildInputTab(SessionState session) {
-    if (session.importedFiles.isEmpty) {
+  /// 입력/프롬프트 탭: 계획서 + 세션 요약 + 프롬프트 파일들 + 실행 가이드
+  Widget _buildInputTab(SessionState session, dynamic artifact) {
+    final files = <_FileEntry>[];
+
+    // 1) 계획서 (기준 문서)
+    if (session.sourceDocumentPath != null) {
+      files.add(_FileEntry(
+        path: session.sourceDocumentPath!,
+        label: '계획서',
+        icon: Icons.description,
+        color: const Color(0xFF0D9488),
+      ));
+    }
+
+    // 2) 세션 파일들 (프롬프트 + 가이드)
+    if (artifact != null) {
+      files.add(_FileEntry(
+        path: artifact.sessionSummaryPath,
+        label: '세션 요약',
+        icon: Icons.summarize_outlined,
+      ));
+      for (final p in artifact.promptPaths) {
+        final name = p.split(Platform.pathSeparator).last;
+        files.add(_FileEntry(
+          path: p,
+          label: name,
+          icon: Icons.article_outlined,
+          color: const Color(0xFF6366F1),
+        ));
+      }
+      files.add(_FileEntry(
+        path: artifact.executionGuidePath,
+        label: '실행 가이드',
+        icon: Icons.play_lesson_outlined,
+      ));
+    }
+
+    if (files.isEmpty) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -81,80 +124,16 @@ class _DocumentsPanelState extends ConsumerState<DocumentsPanel>
               '입력 문서가 없습니다',
               style: TextStyle(color: Colors.grey.shade400, fontSize: 13),
             ),
-            const SizedBox(height: 4),
-            Text(
-              '왼쪽 패널에서 파일을 가져오세요',
-              style: TextStyle(color: Colors.grey.shade400, fontSize: 12),
-            ),
           ],
         ),
       );
     }
 
-    return Column(
-      children: [
-        // File list
-        Container(
-          height: 120,
-          padding: const EdgeInsets.all(8),
-          child: ListView.builder(
-            itemCount: session.importedFiles.length,
-            itemBuilder: (context, index) {
-              final path = session.importedFiles[index];
-              final isSelected = path == session.sourceDocumentPath;
-              return ListTile(
-                dense: true,
-                selected: isSelected,
-                selectedTileColor: const Color(0xFF0D9488).withValues(alpha: 0.08),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                leading: Icon(
-                  Icons.description_outlined,
-                  size: 18,
-                  color: isSelected
-                      ? const Color(0xFF0D9488)
-                      : Colors.grey.shade400,
-                ),
-                title: Text(
-                  path.split(Platform.pathSeparator).last,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-                subtitle: Text(
-                  path,
-                  style: TextStyle(fontSize: 10, color: Colors.grey.shade400),
-                  overflow: TextOverflow.ellipsis,
-                ),
-                onTap: () {
-                  ref.read(sessionProvider.notifier).setSourceDocument(path);
-                },
-              );
-            },
-          ),
-        ),
-        const Divider(height: 1),
-        // Preview
-        Expanded(
-          child: session.sourceDocumentContent != null
-              ? MarkdownViewer(content: session.sourceDocumentContent!)
-              : Center(
-                  child: Text(
-                    '파일을 선택하면 미리보기가 표시됩니다',
-                    style:
-                        TextStyle(color: Colors.grey.shade400, fontSize: 12),
-                  ),
-                ),
-        ),
-      ],
-    );
+    return _fileListWithPreview(files);
   }
 
-  Widget _buildResultsTab(SessionState session) {
-    final artifact = session.lastArtifact;
+  /// 결과 탭: AI가 생성한 result 파일만
+  Widget _buildResultsTab(SessionState session, dynamic artifact) {
     if (artifact == null) {
       return Center(
         child: Column(
@@ -166,26 +145,25 @@ class _DocumentsPanelState extends ConsumerState<DocumentsPanel>
               '생성된 결과가 없습니다',
               style: TextStyle(color: Colors.grey.shade400, fontSize: 13),
             ),
-            const SizedBox(height: 4),
-            Text(
-              '세션을 생성하면 결과가 표시됩니다',
-              style: TextStyle(color: Colors.grey.shade400, fontSize: 12),
-            ),
           ],
         ),
       );
     }
 
-    final allFiles = [
-      artifact.sessionSummaryPath,
-      ...artifact.promptPaths,
-      artifact.executionGuidePath,
-      ...artifact.resultPlaceholderPaths,
-    ];
+    final files = <_FileEntry>[];
+    for (final p in artifact.resultPlaceholderPaths) {
+      final name = p.split(Platform.pathSeparator).last;
+      files.add(_FileEntry(
+        path: p,
+        label: name,
+        icon: Icons.edit_note,
+        color: const Color(0xFF22C55E),
+      ));
+    }
 
     return Column(
       children: [
-        // Session path + open folder button
+        // Session path + folder button
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           color: const Color(0xFFF1F5F9),
@@ -210,56 +188,58 @@ class _DocumentsPanelState extends ConsumerState<DocumentsPanel>
             ],
           ),
         ),
+        Expanded(child: _fileListWithPreview(files)),
+      ],
+    );
+  }
+
+  /// 파일 리스트 + 미리보기 공통 위젯
+  Widget _fileListWithPreview(List<_FileEntry> files) {
+    return Column(
+      children: [
         // File list
-        Container(
-          height: 160,
-          padding: const EdgeInsets.all(8),
+        Expanded(
+          flex: 2,
           child: ListView.builder(
-            itemCount: allFiles.length,
+            padding: const EdgeInsets.all(8),
+            itemCount: files.length,
             itemBuilder: (context, index) {
-              final path = allFiles[index];
-              final fileName = path.split(Platform.pathSeparator).last;
-              final isSelected = path == _selectedResultFile;
+              final entry = files[index];
+              final isSelected = entry.path == _selectedFilePath;
               return ListTile(
                 dense: true,
                 selected: isSelected,
-                selectedTileColor: const Color(0xFF0D9488).withValues(alpha: 0.08),
+                selectedTileColor:
+                    const Color(0xFF0D9488).withValues(alpha: 0.08),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(6),
                 ),
                 leading: Icon(
-                  fileName.contains('result')
-                      ? Icons.edit_note
-                      : Icons.article_outlined,
+                  entry.icon,
                   size: 18,
                   color: isSelected
                       ? const Color(0xFF0D9488)
-                      : Colors.grey.shade400,
+                      : (entry.color ?? Colors.grey.shade400),
                 ),
                 title: Text(
-                  fileName,
+                  entry.label,
                   style: TextStyle(
                     fontSize: 12,
-                    fontFamily: 'monospace',
                     fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
                   ),
+                  overflow: TextOverflow.ellipsis,
                 ),
-                onTap: () async {
-                  final content = await File(path).readAsString();
-                  setState(() {
-                    _selectedResultFile = path;
-                    _selectedResultContent = content;
-                  });
-                },
+                onTap: () => _selectFile(entry.path),
               );
             },
           ),
         ),
         const Divider(height: 1),
-        // Result preview
+        // Preview
         Expanded(
-          child: _selectedResultContent != null
-              ? MarkdownViewer(content: _selectedResultContent!)
+          flex: 3,
+          child: _selectedFileContent != null
+              ? MarkdownViewer(content: _selectedFileContent!)
               : Center(
                   child: Text(
                     '파일을 선택하면 미리보기가 표시됩니다',
@@ -279,4 +259,18 @@ class _DocumentsPanelState extends ConsumerState<DocumentsPanel>
       await Process.run('explorer', [path]);
     }
   }
+}
+
+class _FileEntry {
+  final String path;
+  final String label;
+  final IconData icon;
+  final Color? color;
+
+  const _FileEntry({
+    required this.path,
+    required this.label,
+    required this.icon,
+    this.color,
+  });
 }
