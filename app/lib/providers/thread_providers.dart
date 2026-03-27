@@ -1,7 +1,9 @@
 import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../core/models/agent_provider.dart';
 import '../core/models/orchestration_thread.dart';
 import '../core/models/orchestration_stage.dart';
+import '../core/models/parallel_comparison.dart';
 import '../core/services/agent_detection_service.dart';
 import '../core/services/agent_runner_service.dart';
 import '../core/services/error_log_service.dart';
@@ -9,25 +11,35 @@ import 'session_providers.dart';
 
 class ThreadListState {
   final List<OrchestrationThread> threads;
+  final List<ParallelComparison> comparisons;
   final String? selectedThreadId;
+  final String? selectedComparisonId;
   final bool isStopped;
 
   const ThreadListState({
     this.threads = const [],
+    this.comparisons = const [],
     this.selectedThreadId,
+    this.selectedComparisonId,
     this.isStopped = false,
   });
 
   ThreadListState copyWith({
     List<OrchestrationThread>? threads,
+    List<ParallelComparison>? comparisons,
     String? selectedThreadId,
+    String? selectedComparisonId,
     bool clearSelection = false,
     bool? isStopped,
   }) {
     return ThreadListState(
       threads: threads ?? this.threads,
+      comparisons: comparisons ?? this.comparisons,
       selectedThreadId:
           clearSelection ? null : (selectedThreadId ?? this.selectedThreadId),
+      selectedComparisonId: clearSelection
+          ? null
+          : (selectedComparisonId ?? this.selectedComparisonId),
       isStopped: isStopped ?? this.isStopped,
     );
   }
@@ -39,6 +51,17 @@ class ThreadListState {
           orElse: () => null,
         );
   }
+
+  ParallelComparison? get selectedComparison {
+    if (selectedComparisonId == null) return null;
+    return comparisons.cast<ParallelComparison?>().firstWhere(
+          (c) => c!.id == selectedComparisonId,
+          orElse: () => null,
+        );
+  }
+
+  /// 사이드 레일용: 순차 + 병렬 합쳐서 시간순
+  bool get isComparisonSelected => selectedComparisonId != null;
 }
 
 class ThreadListNotifier extends Notifier<ThreadListState> {
@@ -293,11 +316,185 @@ class ThreadListNotifier extends Notifier<ThreadListState> {
   }
 
   void selectThread(String threadId) {
-    state = state.copyWith(selectedThreadId: threadId);
+    state = state.copyWith(
+        selectedThreadId: threadId, selectedComparisonId: null);
+  }
+
+  void selectComparison(String comparisonId) {
+    state = state.copyWith(
+        selectedComparisonId: comparisonId, selectedThreadId: null);
   }
 
   void deselect() {
     state = state.copyWith(clearSelection: true);
+  }
+
+  // ─── 병렬 비교 ───
+
+  Future<void> startParallelComparison({
+    required List<String> agentIds,
+    required String promptContent,
+    String? sourceDocPath,
+    String? customTitle,
+  }) async {
+    state = state.copyWith(isStopped: false);
+
+    final now = DateTime.now();
+    final compId = 'parallel_${now.millisecondsSinceEpoch}';
+    final title = (customTitle != null && customTitle.trim().isNotEmpty)
+        ? customTitle.trim()
+        : '병렬 비교-${state.comparisons.length + 1}';
+
+    // Agent 이름 매핑
+    final runs = agentIds.map((id) {
+      final agent = AgentProvider.builtIn.firstWhere(
+        (a) => a.id == id,
+        orElse: () => AgentProvider(id: id, displayName: id),
+      );
+      return ParallelRun(
+        agentId: id,
+        agentName: agent.displayName,
+        status: ThreadStatus.pending,
+      );
+    }).toList();
+
+    final comparison = ParallelComparison(
+      id: compId,
+      title: title,
+      createdAt: now,
+      status: ThreadStatus.inProgress,
+      promptContent: promptContent,
+      sourceDocumentPath: sourceDocPath,
+      runs: runs,
+    );
+
+    state = state.copyWith(
+      comparisons: [comparison, ...state.comparisons],
+      selectedComparisonId: compId,
+      selectedThreadId: null,
+    );
+
+    // 병렬 실행
+    final runner = AgentRunnerService();
+    final futures = <Future<void>>[];
+
+    for (var i = 0; i < agentIds.length; i++) {
+      futures.add(_runParallelAgent(
+        compId: compId,
+        index: i,
+        agentId: agentIds[i],
+        promptContent: promptContent,
+        runner: runner,
+      ));
+    }
+
+    await Future.wait(futures);
+
+    // 최종 상태 업데이트
+    final finalComp = _getComparison(compId);
+    if (finalComp != null) {
+      final allDone = finalComp.runs
+          .every((r) => r.status == ThreadStatus.completed);
+      final anyFailed =
+          finalComp.runs.any((r) => r.status == ThreadStatus.failed);
+      _updateComparisonStatus(
+        compId,
+        allDone
+            ? ThreadStatus.completed
+            : anyFailed
+                ? ThreadStatus.failed
+                : ThreadStatus.completed,
+      );
+    }
+  }
+
+  Future<void> _runParallelAgent({
+    required String compId,
+    required int index,
+    required String agentId,
+    required String promptContent,
+    required AgentRunnerService runner,
+  }) async {
+    if (state.isStopped) return;
+
+    // Mark as in progress
+    _updateRun(compId, index, (r) => r.copyWith(
+      status: ThreadStatus.inProgress,
+      startedAt: DateTime.now(),
+    ));
+
+    final result = await runner.run(
+      agentId: agentId,
+      promptContent: promptContent,
+    );
+
+    if (state.isStopped) {
+      _updateRun(compId, index, (r) => r.copyWith(
+        status: ThreadStatus.failed,
+        resultContent: '> 사용자에 의해 중단되었습니다.',
+        completedAt: DateTime.now(),
+      ));
+      return;
+    }
+
+    if (result.success) {
+      _updateRun(compId, index, (r) => r.copyWith(
+        status: ThreadStatus.completed,
+        resultContent: result.output,
+        completedAt: DateTime.now(),
+      ));
+    } else {
+      final errorMsg = '## 실행 실패\n\n'
+          '- Exit code: ${result.exitCode}\n'
+          '- 오류: ${result.error ?? "Unknown"}\n'
+          '${result.output.isNotEmpty ? "\n### 출력\n```\n${result.output}\n```" : ""}';
+
+      await ErrorLogService.log(
+        stage: '병렬 비교 - $agentId',
+        error: result.error ?? 'Unknown error',
+        stdout: result.output,
+        command: result.command,
+        exitCode: result.exitCode,
+      );
+
+      _updateRun(compId, index, (r) => r.copyWith(
+        status: ThreadStatus.failed,
+        resultContent: errorMsg,
+        completedAt: DateTime.now(),
+      ));
+    }
+  }
+
+  // ─── Parallel Helpers ───
+
+  ParallelComparison? _getComparison(String id) {
+    return state.comparisons.cast<ParallelComparison?>().firstWhere(
+          (c) => c!.id == id,
+          orElse: () => null,
+        );
+  }
+
+  void _updateRun(String compId, int index,
+      ParallelRun Function(ParallelRun) updater) {
+    final compIdx = state.comparisons.indexWhere((c) => c.id == compId);
+    if (compIdx < 0) return;
+
+    final comp = state.comparisons[compIdx];
+    final runs = List<ParallelRun>.from(comp.runs);
+    runs[index] = updater(runs[index]);
+
+    final comparisons = List<ParallelComparison>.from(state.comparisons);
+    comparisons[compIdx] = comp.copyWith(runs: runs);
+    state = state.copyWith(comparisons: comparisons);
+  }
+
+  void _updateComparisonStatus(String compId, ThreadStatus status) {
+    final compIdx = state.comparisons.indexWhere((c) => c.id == compId);
+    if (compIdx < 0) return;
+
+    final comparisons = List<ParallelComparison>.from(state.comparisons);
+    comparisons[compIdx] = comparisons[compIdx].copyWith(status: status);
+    state = state.copyWith(comparisons: comparisons);
   }
 
   // ─── Helpers ───

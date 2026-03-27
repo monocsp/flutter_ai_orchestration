@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/models/orchestration_thread.dart';
+import '../../core/models/parallel_comparison.dart';
 import '../../providers/session_providers.dart';
 import '../../providers/thread_providers.dart';
 import '../session_setup/session_setup_panel.dart';
@@ -10,10 +11,12 @@ import '../stage_editor/stage_editor_panel.dart';
 import '../documents/documents_panel.dart';
 import '../agent_status/agent_status_bar.dart';
 import '../thread/thread_detail_view.dart';
+import '../parallel/parallel_setup_panel.dart';
+import '../parallel/parallel_result_view.dart';
 import '../tutorial/tutorial_overlay.dart';
 
 /// Main view mode
-enum WorkbenchView { setup, thread }
+enum WorkbenchView { setup, thread, comparison }
 
 class WorkbenchViewNotifier extends Notifier<WorkbenchView> {
   @override
@@ -84,9 +87,12 @@ class _WorkbenchScreenState extends ConsumerState<WorkbenchScreen> {
                             onHelpTap: _toggleTutorial,
                           ),
                           Expanded(
-                            child: currentView == WorkbenchView.setup
-                                ? const _SetupBody()
-                                : const _ThreadBody(),
+                            child: switch (currentView) {
+                              WorkbenchView.setup => const _SetupBody(),
+                              WorkbenchView.thread => const _ThreadBody(),
+                              WorkbenchView.comparison =>
+                                _ComparisonBody(threadState: threadState),
+                            },
                           ),
                         ],
                       ),
@@ -152,35 +158,56 @@ class _SideRail extends ConsumerWidget {
             color: const Color(0xFF475569),
           ),
           const SizedBox(height: 8),
-          // Thread list
+          // Thread + Comparison list
           Expanded(
-            child: threadState.threads.isEmpty
-                ? const SizedBox.shrink()
-                : ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 6),
-                    itemCount: threadState.threads.length,
-                    itemBuilder: (context, index) {
-                      final thread = threadState.threads[index];
-                      final isSelected =
-                          thread.id == threadState.selectedThreadId &&
-                              currentView == WorkbenchView.thread;
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 4),
-                        child: _ThreadIcon(
-                          thread: thread,
-                          index: index,
-                          isSelected: isSelected,
-                          onTap: () {
-                            ref
-                                .read(threadListProvider.notifier)
-                                .selectThread(thread.id);
-                            ref.read(workbenchViewProvider.notifier).setView(
-                                WorkbenchView.thread);
-                          },
-                        ),
-                      );
-                    },
-                  ),
+            child: ListView(
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              children: [
+                // Sequential threads
+                ...List.generate(threadState.threads.length, (index) {
+                  final thread = threadState.threads[index];
+                  final isSelected =
+                      thread.id == threadState.selectedThreadId &&
+                          currentView == WorkbenchView.thread;
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: _ThreadIcon(
+                      thread: thread,
+                      index: index,
+                      isSelected: isSelected,
+                      onTap: () {
+                        ref
+                            .read(threadListProvider.notifier)
+                            .selectThread(thread.id);
+                        ref.read(workbenchViewProvider.notifier).setView(
+                            WorkbenchView.thread);
+                      },
+                    ),
+                  );
+                }),
+                // Parallel comparisons
+                ...List.generate(threadState.comparisons.length, (index) {
+                  final comp = threadState.comparisons[index];
+                  final isSelected =
+                      comp.id == threadState.selectedComparisonId &&
+                          currentView == WorkbenchView.comparison;
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: _ComparisonIcon(
+                      comparison: comp,
+                      isSelected: isSelected,
+                      onTap: () {
+                        ref
+                            .read(threadListProvider.notifier)
+                            .selectComparison(comp.id);
+                        ref.read(workbenchViewProvider.notifier).setView(
+                            WorkbenchView.comparison);
+                      },
+                    ),
+                  );
+                }),
+              ],
+            ),
           ),
           // Help button at bottom
           const SizedBox(height: 8),
@@ -400,9 +427,14 @@ class _TitleBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final selectedThread = threadState.selectedThread;
 
+    final selectedComparison = threadState.selectedComparison;
+
     String title;
     IconData icon;
-    if (currentView == WorkbenchView.thread && selectedThread != null) {
+    if (currentView == WorkbenchView.comparison && selectedComparison != null) {
+      title = selectedComparison.title;
+      icon = Icons.compare_arrows;
+    } else if (currentView == WorkbenchView.thread && selectedThread != null) {
       title = selectedThread.title;
       icon = Icons.forum_outlined;
     } else {
@@ -472,12 +504,93 @@ class _TitleBar extends StatelessWidget {
   }
 }
 
-/// Setup view: 3-panel layout (session setup / stage editor / documents)
-class _SetupBody extends ConsumerWidget {
+/// Setup view with mode tabs: sequential / parallel
+class _SetupBody extends StatefulWidget {
   const _SetupBody();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  State<_SetupBody> createState() => _SetupBodyState();
+}
+
+class _SetupBodyState extends State<_SetupBody>
+    with SingleTickerProviderStateMixin {
+  late TabController _modeTab;
+
+  @override
+  void initState() {
+    super.initState();
+    _modeTab = TabController(length: 2, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _modeTab.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        // Mode tabs
+        Container(
+          height: 40,
+          decoration: const BoxDecoration(
+            color: Color(0xFFF1F5F9),
+            border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+          ),
+          child: TabBar(
+            controller: _modeTab,
+            labelStyle:
+                const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+            unselectedLabelStyle:
+                const TextStyle(fontSize: 12, fontWeight: FontWeight.w400),
+            indicatorSize: TabBarIndicatorSize.label,
+            tabs: const [
+              Tab(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.linear_scale, size: 14),
+                    SizedBox(width: 6),
+                    Text('순차 오케스트레이션'),
+                  ],
+                ),
+              ),
+              Tab(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.compare_arrows, size: 14),
+                    SizedBox(width: 6),
+                    Text('병렬 비교'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        // Tab content
+        Expanded(
+          child: TabBarView(
+            controller: _modeTab,
+            children: [
+              const _SequentialSetup(),
+              const _ParallelSetup(),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Sequential: existing 3-panel layout
+class _SequentialSetup extends StatelessWidget {
+  const _SequentialSetup();
+
+  @override
+  Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
         if (constraints.maxWidth < 800) {
@@ -507,6 +620,54 @@ class _SetupBody extends ConsumerWidget {
                   ),
                 ),
                 child: const DocumentsPanel(),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// Parallel: setup panel only (full width)
+class _ParallelSetup extends StatelessWidget {
+  const _ParallelSetup();
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 600) {
+          return const ParallelSetupPanel();
+        }
+        return Row(
+          children: [
+            SizedBox(
+              width: (constraints.maxWidth * 0.35).clamp(300.0, 400.0),
+              child: Container(
+                decoration: AppTheme.sidebarDecoration,
+                child: const ParallelSetupPanel(),
+              ),
+            ),
+            Expanded(
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.compare_arrows,
+                        size: 56, color: Colors.grey.shade200),
+                    const SizedBox(height: 16),
+                    Text(
+                      '동일한 프롬프트를 여러 AI에 병렬로 실행하여\n결과를 비교합니다',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey.shade400,
+                        height: 1.5,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
@@ -547,6 +708,150 @@ class _ThreadBody extends ConsumerWidget {
           ],
         );
       },
+    );
+  }
+}
+
+/// Comparison view: parallel result view
+class _ComparisonBody extends StatelessWidget {
+  final ThreadListState threadState;
+  const _ComparisonBody({required this.threadState});
+
+  @override
+  Widget build(BuildContext context) {
+    final comparison = threadState.selectedComparison;
+    if (comparison == null) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.compare_arrows, size: 48, color: Colors.grey.shade300),
+            const SizedBox(height: 12),
+            Text(
+              '병렬 비교를 선택하세요',
+              style: TextStyle(color: Colors.grey.shade400, fontSize: 13),
+            ),
+          ],
+        ),
+      );
+    }
+    return ParallelResultView(
+      key: ValueKey(comparison.id),
+      comparison: comparison,
+    );
+  }
+}
+
+/// Sidebar icon for parallel comparisons
+class _ComparisonIcon extends StatelessWidget {
+  final ParallelComparison comparison;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _ComparisonIcon({
+    required this.comparison,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isCompleted = comparison.status == ThreadStatus.completed;
+    final isRunning = comparison.status == ThreadStatus.inProgress;
+    final isFailed = comparison.status == ThreadStatus.failed;
+    final progress = comparison.totalCount > 0
+        ? comparison.completedCount / comparison.totalCount
+        : 0.0;
+
+    Color borderColor;
+    if (isCompleted) {
+      borderColor = const Color(0xFF22C55E);
+    } else if (isRunning) {
+      borderColor = const Color(0xFF6366F1); // indigo for parallel
+    } else if (isFailed) {
+      borderColor = const Color(0xFFEF4444);
+    } else {
+      borderColor = const Color(0xFF475569);
+    }
+
+    return Tooltip(
+      message:
+          '${comparison.title}\n${comparison.completedCount}/${comparison.totalCount} 완료',
+      child: Material(
+        color: isSelected
+            ? borderColor.withValues(alpha: 0.15)
+            : Colors.transparent,
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(10),
+          child: SizedBox(
+            width: 44,
+            height: 44,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                if (isRunning)
+                  SizedBox(
+                    width: 40,
+                    height: 40,
+                    child: CircularProgressIndicator(
+                      value: progress,
+                      strokeWidth: 2.5,
+                      backgroundColor: const Color(0xFF475569),
+                      color: const Color(0xFF6366F1),
+                    ),
+                  ),
+                if (isCompleted)
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                          color: const Color(0xFF22C55E), width: 2.5),
+                    ),
+                  ),
+                if (isFailed)
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                          color: const Color(0xFFEF4444), width: 2.5),
+                    ),
+                  ),
+                if (!isRunning && !isCompleted && !isFailed)
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border:
+                          Border.all(color: const Color(0xFF475569), width: 1),
+                    ),
+                  ),
+                // Center icon: compare arrows
+                if (isCompleted)
+                  const Icon(Icons.check_rounded,
+                      size: 18, color: Color(0xFF22C55E))
+                else if (isFailed)
+                  const Icon(Icons.close_rounded,
+                      size: 18, color: Color(0xFFEF4444))
+                else
+                  Icon(
+                    Icons.compare_arrows,
+                    size: 18,
+                    color: isRunning
+                        ? const Color(0xFF6366F1)
+                        : Colors.grey.shade400,
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
