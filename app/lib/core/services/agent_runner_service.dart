@@ -3,14 +3,12 @@ import 'package:path/path.dart' as p;
 
 class AgentRunnerService {
   /// AI CLI를 실행하고 결과를 반환합니다.
-  /// 프롬프트는 임시 파일에 저장하여 CLI에 전달합니다.
   Future<AgentRunResult> run({
     required String agentId,
     required String promptContent,
     String? workingDir,
   }) async {
     final shell = Platform.environment['SHELL'] ?? '/bin/zsh';
-    final exe = _resolveExecutable(agentId);
 
     // 프롬프트를 임시 파일에 저장
     final tmpDir = await Directory.systemTemp.createTemp('orchestration_');
@@ -18,7 +16,7 @@ class AgentRunnerService {
     await promptFile.writeAsString(promptContent);
 
     try {
-      final cmd = _buildCommand(agentId, exe, promptFile.path);
+      final cmd = _buildCommand(agentId, promptFile.path);
 
       final result = await Process.run(
         shell,
@@ -34,6 +32,7 @@ class AgentRunnerService {
         return AgentRunResult(
           success: true,
           output: stdout,
+          command: cmd,
           exitCode: result.exitCode,
         );
       } else {
@@ -43,6 +42,7 @@ class AgentRunnerService {
           error: stderr.isNotEmpty
               ? stderr
               : 'Exit code: ${result.exitCode}',
+          command: cmd,
           exitCode: result.exitCode,
         );
       }
@@ -61,44 +61,28 @@ class AgentRunnerService {
         exitCode: -1,
       );
     } finally {
-      // 임시 파일 정리
       try {
         await tmpDir.delete(recursive: true);
       } catch (_) {}
     }
   }
 
-  String _resolveExecutable(String agentId) {
-    switch (agentId) {
-      case 'codex':
-        return 'codex';
-      case 'claude':
-        return 'claude';
-      case 'gemini':
-        return 'gemini';
-      case 'copilot':
-        return 'copilot';
-      default:
-        return agentId;
-    }
-  }
-
-  /// 각 CLI에 맞는 비대화형 실행 명령을 생성합니다.
-  /// 프롬프트는 임시 파일 경로로 전달합니다.
-  String _buildCommand(String agentId, String exe, String promptFilePath) {
+  /// 각 CLI에 맞는 비대화형 실행 명령 생성
+  String _buildCommand(String agentId, String promptFilePath) {
     switch (agentId) {
       case 'claude':
-        // claude -p "$(cat file)" -- 파일 내용을 프롬프트로
-        return '$exe -p "\$(cat \'$promptFilePath\')"';
+        // claude -p "$(cat file)" --allowedTools "" --no-input
+        // --print 모드 + 권한 체크 건너뛰기
+        return 'cat \'$promptFilePath\' | claude -p --dangerously-skip-permissions';
       case 'codex':
-        // codex -q "$(cat file)"
-        return '$exe -q "\$(cat \'$promptFilePath\')"';
+        // codex exec "$(cat file)" — 비대화형 모드
+        return 'codex exec "\$(cat \'$promptFilePath\')"';
       case 'gemini':
-        // cat file | gemini
-        return 'cat \'$promptFilePath\' | $exe';
+        // gemini -p "$(cat file)" — 비대화형 모드
+        return 'cat \'$promptFilePath\' | gemini -p';
       default:
         // 범용: cat file | exe
-        return 'cat \'$promptFilePath\' | $exe';
+        return 'cat \'$promptFilePath\' | $agentId';
     }
   }
 }
@@ -107,12 +91,14 @@ class AgentRunResult {
   final bool success;
   final String output;
   final String? error;
+  final String? command;
   final int exitCode;
 
   const AgentRunResult({
     required this.success,
     required this.output,
     this.error,
+    this.command,
     required this.exitCode,
   });
 }

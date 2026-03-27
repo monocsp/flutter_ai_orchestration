@@ -266,6 +266,7 @@ class ThreadListNotifier extends Notifier<ThreadListState> {
           stage: stage.name,
           error: result.error ?? 'Unknown error',
           stdout: result.output,
+          command: result.command,
           exitCode: result.exitCode,
         );
         errorMsg.writeln('\n> 에러 로그: `$logPath`');
