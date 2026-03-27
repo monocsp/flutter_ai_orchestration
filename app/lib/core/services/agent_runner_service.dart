@@ -78,8 +78,8 @@ class AgentRunnerService {
         // codex exec "$(cat file)" — 비대화형 모드
         return 'codex exec "\$(cat \'$promptFilePath\')"';
       case 'gemini':
-        // gemini -p "$(cat file)" — 비대화형 모드
-        return 'cat \'$promptFilePath\' | gemini -p';
+        // gemini -p "prompt" — 비대화형 모드, -p는 값을 인자로 받음
+        return 'gemini -p "\$(cat \'$promptFilePath\')"';
       default:
         // 범용: cat file | exe
         return 'cat \'$promptFilePath\' | $agentId';
