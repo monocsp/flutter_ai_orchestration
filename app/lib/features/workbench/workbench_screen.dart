@@ -742,7 +742,7 @@ class _ComparisonBody extends StatelessWidget {
   }
 }
 
-/// Sidebar icon for parallel comparisons
+/// Sidebar icon for parallel comparisons — segmented ring per agent
 class _ComparisonIcon extends StatelessWidget {
   final ParallelComparison comparison;
   final bool isSelected;
@@ -756,30 +756,16 @@ class _ComparisonIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isCompleted = comparison.status == ThreadStatus.completed;
+    final allDone = comparison.runs
+        .every((r) => r.status == ThreadStatus.completed || r.status == ThreadStatus.failed);
     final isRunning = comparison.status == ThreadStatus.inProgress;
-    final isFailed = comparison.status == ThreadStatus.failed;
-    final progress = comparison.totalCount > 0
-        ? comparison.completedCount / comparison.totalCount
-        : 0.0;
-
-    Color borderColor;
-    if (isCompleted) {
-      borderColor = const Color(0xFF22C55E);
-    } else if (isRunning) {
-      borderColor = const Color(0xFF6366F1); // indigo for parallel
-    } else if (isFailed) {
-      borderColor = const Color(0xFFEF4444);
-    } else {
-      borderColor = const Color(0xFF475569);
-    }
 
     return Tooltip(
       message:
           '${comparison.title}\n${comparison.completedCount}/${comparison.totalCount} 완료',
       child: Material(
         color: isSelected
-            ? borderColor.withValues(alpha: 0.15)
+            ? const Color(0xFF6366F1).withValues(alpha: 0.15)
             : Colors.transparent,
         borderRadius: BorderRadius.circular(10),
         child: InkWell(
@@ -791,68 +777,96 @@ class _ComparisonIcon extends StatelessWidget {
             child: Stack(
               alignment: Alignment.center,
               children: [
-                if (isRunning)
-                  SizedBox(
-                    width: 40,
-                    height: 40,
-                    child: CircularProgressIndicator(
-                      value: progress,
-                      strokeWidth: 2.5,
-                      backgroundColor: const Color(0xFF475569),
-                      color: const Color(0xFF6366F1),
-                    ),
+                // Segmented ring
+                CustomPaint(
+                  size: const Size(40, 40),
+                  painter: _SegmentedRingPainter(
+                    segments: comparison.runs.map((r) => r.status).toList(),
                   ),
-                if (isCompleted)
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                          color: const Color(0xFF22C55E), width: 2.5),
-                    ),
-                  ),
-                if (isFailed)
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                          color: const Color(0xFFEF4444), width: 2.5),
-                    ),
-                  ),
-                if (!isRunning && !isCompleted && !isFailed)
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border:
-                          Border.all(color: const Color(0xFF475569), width: 1),
-                    ),
-                  ),
-                // Center icon: compare arrows
-                if (isCompleted)
+                ),
+                // Center icon
+                if (allDone)
                   const Icon(Icons.check_rounded,
                       size: 18, color: Color(0xFF22C55E))
-                else if (isFailed)
-                  const Icon(Icons.close_rounded,
-                      size: 18, color: Color(0xFFEF4444))
+                else if (isRunning)
+                  SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: const Color(0xFF6366F1),
+                    ),
+                  )
                 else
-                  Icon(
-                    Icons.compare_arrows,
-                    size: 18,
-                    color: isRunning
-                        ? const Color(0xFF6366F1)
-                        : Colors.grey.shade400,
-                  ),
+                  Icon(Icons.compare_arrows,
+                      size: 18, color: Colors.grey.shade400),
               ],
             ),
           ),
         ),
       ),
     );
+  }
+}
+
+/// Paints a circle divided into N equal arcs, each colored by status
+class _SegmentedRingPainter extends CustomPainter {
+  final List<ThreadStatus> segments;
+
+  _SegmentedRingPainter({required this.segments});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (segments.isEmpty) return;
+
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.width / 2 - 1.5;
+    const strokeWidth = 3.0;
+    const gapRadians = 0.08; // small gap between segments
+
+    final sweepPerSegment =
+        (2 * 3.14159265 - gapRadians * segments.length) / segments.length;
+    var startAngle = -3.14159265 / 2; // start from top
+
+    for (final status in segments) {
+      final paint = Paint()
+        ..color = _colorForStatus(status)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = strokeWidth
+        ..strokeCap = StrokeCap.round;
+
+      canvas.drawArc(
+        Rect.fromCircle(center: center, radius: radius),
+        startAngle,
+        sweepPerSegment,
+        false,
+        paint,
+      );
+
+      startAngle += sweepPerSegment + gapRadians;
+    }
+  }
+
+  Color _colorForStatus(ThreadStatus status) {
+    switch (status) {
+      case ThreadStatus.completed:
+        return const Color(0xFF22C55E);
+      case ThreadStatus.inProgress:
+        return const Color(0xFF6366F1);
+      case ThreadStatus.failed:
+        return const Color(0xFFEF4444);
+      case ThreadStatus.pending:
+        return const Color(0xFF475569);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _SegmentedRingPainter oldDelegate) {
+    if (oldDelegate.segments.length != segments.length) return true;
+    for (var i = 0; i < segments.length; i++) {
+      if (oldDelegate.segments[i] != segments[i]) return true;
+    }
+    return false;
   }
 }
 

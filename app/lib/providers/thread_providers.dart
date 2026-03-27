@@ -390,20 +390,14 @@ class ThreadListNotifier extends Notifier<ThreadListState> {
 
     await Future.wait(futures);
 
-    // 최종 상태 업데이트
+    // 최종 상태: 모든 Agent가 끝났으면 completed (개별 실패는 세그먼트로 표시)
     final finalComp = _getComparison(compId);
     if (finalComp != null) {
-      final allDone = finalComp.runs
-          .every((r) => r.status == ThreadStatus.completed);
-      final anyFailed =
-          finalComp.runs.any((r) => r.status == ThreadStatus.failed);
+      final allFinished = finalComp.runs.every(
+          (r) => r.status == ThreadStatus.completed || r.status == ThreadStatus.failed);
       _updateComparisonStatus(
         compId,
-        allDone
-            ? ThreadStatus.completed
-            : anyFailed
-                ? ThreadStatus.failed
-                : ThreadStatus.completed,
+        allFinished ? ThreadStatus.completed : ThreadStatus.inProgress,
       );
     }
   }
