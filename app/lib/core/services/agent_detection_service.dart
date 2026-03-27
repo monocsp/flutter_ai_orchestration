@@ -32,32 +32,39 @@ class AgentDetectionService {
         final path = (whichResult.stdout as String).trim().split('\n').first;
         if (path.isEmpty) continue;
 
-        // 2) --version으로 실제 실행 가능 여부 확인
+        // 2) --version 실행 (stdin에 "n" 전달하여 대화형 프롬프트 방지)
         String? version;
         bool canExecute = false;
         try {
-          final vResult = await Process.run(
+          final process = await Process.start(
             shell,
             ['-l', '-c', '$exe --version'],
-          ).timeout(const Duration(seconds: 10));
+          );
+          // stdin에 "n"을 넣어서 대화형 프롬프트가 걸리지 않게
+          process.stdin.writeln('n');
+          await process.stdin.close();
 
-          if (vResult.exitCode == 0) {
+          final vResult = await process.exitCode
+              .timeout(const Duration(seconds: 8));
+          final stdout =
+              await process.stdout.transform(const SystemEncoding().decoder).join();
+          final stderr =
+              await process.stderr.transform(const SystemEncoding().decoder).join();
+
+          final allOutput = '$stdout\n$stderr'.toLowerCase();
+
+          // "cannot find", "not found", "not installed" → 미설치
+          if (allOutput.contains('cannot find') ||
+              allOutput.contains('not found') ||
+              allOutput.contains('not installed') ||
+              allOutput.contains('install')) {
+            canExecute = false;
+          } else if (vResult == 0 && stdout.trim().isNotEmpty) {
             canExecute = true;
-            version = (vResult.stdout as String).trim().split('\n').first;
-            if (version.isEmpty) {
-              version = (vResult.stderr as String).trim().split('\n').first;
-            }
-          } else {
-            // --version 실패 → 경로는 있지만 실행 불가
-            final stderr = (vResult.stderr as String).trim();
-            // "Cannot find" 같은 메시지가 있으면 미설치
-            if (stderr.contains('Cannot find') ||
-                stderr.contains('not found') ||
-                stderr.contains('not installed')) {
-              canExecute = false;
-            }
+            version = stdout.trim().split('\n').first;
           }
         } catch (_) {
+          // timeout 등 → 실행 불가 판정
           canExecute = false;
         }
 
