@@ -53,11 +53,11 @@ class AgentDetectionService {
 
           final allOutput = '$stdout\n$stderr'.toLowerCase();
 
-          // "cannot find", "not found", "not installed" → 미설치
+          // 명확한 미설치 패턴만 감지
           if (allOutput.contains('cannot find') ||
-              allOutput.contains('not found') ||
+              allOutput.contains('command not found') ||
               allOutput.contains('not installed') ||
-              allOutput.contains('install')) {
+              allOutput.contains('install github copilot cli')) {
             canExecute = false;
           } else if (vResult == 0 && stdout.trim().isNotEmpty) {
             canExecute = true;
