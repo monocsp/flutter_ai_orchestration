@@ -298,13 +298,11 @@ class _ParallelSetupPanelState extends ConsumerState<ParallelSetupPanel> {
       final title = _titleController.text;
       final prompt = _promptController.text;
 
-      // 계획서 내용을 프롬프트 앞에 추가
       final fullPrompt = _sourceDocContent != null
           ? '# 기준 문서\n\n$_sourceDocContent\n\n---\n\n$prompt'
           : prompt;
 
-      ref.read(workbenchViewProvider.notifier).setView(WorkbenchView.thread);
-
+      // 병렬 실행 시작 (백그라운드)
       ref.read(threadListProvider.notifier).startParallelComparison(
             agentIds: _selectedAgentIds.toList(),
             promptContent: fullPrompt,
@@ -313,6 +311,10 @@ class _ParallelSetupPanelState extends ConsumerState<ParallelSetupPanel> {
           );
 
       _titleController.clear();
+
+      // 즉시 비교 결과 뷰로 전환
+      ref.read(workbenchViewProvider.notifier).setView(
+          WorkbenchView.comparison);
     } finally {
       await Future.delayed(const Duration(seconds: 3));
       if (mounted) setState(() => _isStarting = false);
