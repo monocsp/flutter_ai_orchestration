@@ -90,8 +90,8 @@ class SessionState {
             outputRootPath ?? p.join(Directory.current.path, 'output'),
         analysisAgent = analysisAgent ?? AgentProvider.builtIn[1],
         criticAgent = criticAgent ?? AgentProvider.builtIn[0],
-        preset = preset ?? OrchestrationPreset.defaults[0],
-        stages = stages ?? OrchestrationPreset.defaults[0].stages;
+        preset = preset ?? OrchestrationPreset.defaults[1],  // 5단계 기본
+        stages = stages ?? OrchestrationPreset.defaults[1].stages;
 
   SessionState copyWith({
     String? sourceDocumentPath,

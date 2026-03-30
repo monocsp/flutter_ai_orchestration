@@ -24,39 +24,21 @@ class OrchestrationPreset {
   static List<OrchestrationPreset> get defaults => [
         OrchestrationPreset(
           id: 'quick_3stage',
-          name: '빠른 3단계 경량형',
-          description: '분석 → 비판 → 최종 계획',
-          stages: OrchestrationStage.legacyThreeStages,
+          name: '3단계 (빠른 분석)',
+          description: '분석 → 비판 → 최종 계획. 단순한 문서나 빠른 결과가 필요할 때.',
+          stages: OrchestrationStage.threeStages,
         ),
         OrchestrationPreset(
           id: 'default_5stage',
-          name: '기본 5단계 비판형',
-          description: '분석 → 비판 → 보강 → 재비판 → 최종 종합',
-          stages: OrchestrationStage.defaultFiveStages,
+          name: '5단계 (기본)',
+          description: '분석 → 비판 → 보강 → 재비판 → 최종. 대부분의 문서에 적합.',
+          stages: OrchestrationStage.fiveStages,
         ),
         OrchestrationPreset(
           id: 'deep_7stage',
-          name: '정밀 7단계 심화형',
-          description: '분석 → 비판 → 보강 → 재비판 → 심화 → 3차 비판 → 최종 종합',
-          stages: OrchestrationStage.deepSevenStages,
-        ),
-        OrchestrationPreset(
-          id: 'qa_bug',
-          name: 'QA/버그 대응형',
-          description: '버그 분석 → 원인 검증 → 수정 계획 → 회귀 검토 → 최종',
-          stages: OrchestrationStage.qaBugStages,
-        ),
-        OrchestrationPreset(
-          id: 'feature_review',
-          name: '기능 기획 검증형',
-          description: '기능 분석 → 실현 가능성 비판 → 설계 보강 → 리스크 검토 → 최종',
-          stages: OrchestrationStage.featureReviewStages,
-        ),
-        OrchestrationPreset(
-          id: 'refactor',
-          name: '리팩터링 계획형',
-          description: '현행 분석 → 구조 비판 → 리팩터링 설계 → 영향 검토 → 최종',
-          stages: OrchestrationStage.refactorStages,
+          name: '7단계 (정밀 심화)',
+          description: '분석 → 비판 → 보강 → 재비판 → 심화 → 3차 비판 → 최종. 복잡하거나 중요한 문서에.',
+          stages: OrchestrationStage.sevenStages,
         ),
       ];
 }
