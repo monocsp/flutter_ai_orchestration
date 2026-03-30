@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
 import '../core/models/agent_provider.dart';
 import '../core/models/orchestration_thread.dart';
 import '../core/models/orchestration_stage.dart';
@@ -333,6 +334,25 @@ class ThreadListNotifier extends Notifier<ThreadListState> {
 
     // 단계에 경로 할당
     _assignArtifactPaths(tempId, artifact);
+
+    // Step 0, Step 0.5 결과를 세션 폴더에 저장
+    try {
+      final currentThread = _getThread(tempId)!;
+      // Step 0: Agent 상태 확인
+      if (currentThread.stages.isNotEmpty &&
+          currentThread.stages[0].resultContent != null) {
+        await File(p.join(artifact.sessionDirPath, '00_agent_check.md'))
+            .writeAsString(currentThread.stages[0].resultContent!);
+      }
+      // Step 0.5: 설정 분석/확인
+      if (currentThread.stages.length > 1 &&
+          currentThread.stages[1].resultContent != null) {
+        await File(p.join(artifact.sessionDirPath, '00_settings_analysis.md'))
+            .writeAsString(currentThread.stages[1].resultContent!);
+      }
+    } catch (_) {
+      // 저장 실패해도 오케스트레이션은 계속 진행
+    }
 
     // 자동 실행 루프
     final runner = AgentRunnerService();
