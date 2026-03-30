@@ -146,20 +146,56 @@ class _StageEditorPanelState extends ConsumerState<StageEditorPanel> {
                               ),
                             ),
                             const SizedBox(height: 6),
-                            // Label
-                            Text(
-                              stage.name,
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: isSelected
-                                    ? FontWeight.w700
-                                    : FontWeight.w500,
-                                color: isSelected
-                                    ? const Color(0xFF0F172A)
-                                    : Colors.grey.shade500,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                              textAlign: TextAlign.center,
+                            // Label + help tooltip
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    stage.name,
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: isSelected
+                                          ? FontWeight.w700
+                                          : FontWeight.w500,
+                                      color: isSelected
+                                          ? const Color(0xFF0F172A)
+                                          : Colors.grey.shade500,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+                                if (stage.description.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(left: 2),
+                                    child: Tooltip(
+                                      message: stage.description,
+                                      preferBelow: true,
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 12, vertical: 8),
+                                      textStyle: const TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.white,
+                                        height: 1.4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF1E293B),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      waitDuration:
+                                          const Duration(milliseconds: 300),
+                                      child: Icon(
+                                        Icons.help_outline_rounded,
+                                        size: 11,
+                                        color: isSelected
+                                            ? color.withValues(alpha: 0.6)
+                                            : Colors.grey.shade400,
+                                      ),
+                                    ),
+                                  ),
+                              ],
                             ),
                           ],
                         ),
