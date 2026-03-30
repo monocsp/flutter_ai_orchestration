@@ -2,38 +2,46 @@ import 'dart:io';
 import '../models/agent_provider.dart';
 
 class AgentDetectionService {
-  String? _cachedPath;
+  static String? _cachedPath;
 
-  /// 로그인 셸에서 실제 PATH를 가져옵니다.
-  /// .app 번들로 실행 시 Finder가 터미널 PATH를 상속하지 않는 문제를 해결합니다.
-  Future<String> _getLoginShellPath() async {
+  /// 로그인 셸에서 실제 PATH를 한 번 가져와 캐싱합니다.
+  /// .app 번들에서 Finder로 실행 시 터미널 PATH가 없는 문제를 해결합니다.
+  static Future<String> getLoginShellPath() async {
     if (_cachedPath != null) return _cachedPath!;
 
     final shell = Platform.environment['SHELL'] ?? '/bin/zsh';
+    final home = Platform.environment['HOME'] ?? '';
+
     try {
+      // 기존 환경을 유지한 채 로그인 셸에서 PATH만 가져옴
       final result = await Process.run(
         shell,
-        ['-l', '-c', 'echo \$PATH'],
+        ['-l', '-i', '-c', 'echo \$PATH'],
+        environment: null, // 시스템 환경 그대로 상속
       ).timeout(const Duration(seconds: 10));
 
       if (result.exitCode == 0) {
-        _cachedPath = (result.stdout as String).trim();
-        if (_cachedPath!.isNotEmpty) return _cachedPath!;
+        final p = (result.stdout as String).trim().split('\n').last;
+        if (p.isNotEmpty) {
+          _cachedPath = p;
+          return _cachedPath!;
+        }
       }
     } catch (_) {}
 
-    // 폴백: 일반적인 경로를 직접 추가
-    _cachedPath = [
+    // 폴백: 현재 PATH에 일반적인 경로를 보강
+    final currentPath = Platform.environment['PATH'] ?? '';
+    final extraPaths = [
       '/opt/homebrew/bin',
+      '/opt/homebrew/sbin',
       '/usr/local/bin',
-      '/usr/bin',
-      '/bin',
-      '${Platform.environment['HOME']}/.local/bin',
-      '${Platform.environment['HOME']}/.nvm/versions/node/current/bin',
-      '${Platform.environment['HOME']}/.npm-global/bin',
-      Platform.environment['PATH'] ?? '',
-    ].join(':');
+      '$home/.local/bin',
+      '$home/.nvm/versions/node/current/bin',
+      '$home/.npm-global/bin',
+      '$home/.pub-cache/bin',
+    ];
 
+    _cachedPath = [...extraPaths, currentPath].join(':');
     return _cachedPath!;
   }
 
@@ -53,17 +61,15 @@ class AgentDetectionService {
   }
 
   Future<AgentInstallStatus> _detect(AgentProvider agent) async {
-    final loginPath = await _getLoginShellPath();
+    final loginPath = await getLoginShellPath();
     final shell = Platform.environment['SHELL'] ?? '/bin/zsh';
-    final env = {'PATH': loginPath, 'LANG': 'en_US.UTF-8'};
 
     for (final exe in agent.executableNames) {
       try {
-        // 1) which로 경로 확인 — 로그인 셸의 PATH 사용
+        // 1) which로 경로 확인 — PATH를 export한 뒤 which 실행
         final whichResult = await Process.run(
           shell,
-          ['-l', '-c', 'which $exe'],
-          environment: env,
+          ['-c', 'export PATH="$loginPath:\$PATH"; which $exe'],
         ).timeout(const Duration(seconds: 10));
         if (whichResult.exitCode != 0) continue;
 
@@ -76,8 +82,7 @@ class AgentDetectionService {
         try {
           final process = await Process.start(
             shell,
-            ['-l', '-c', '$exe --version'],
-            environment: env,
+            ['-c', 'export PATH="$loginPath:\$PATH"; $exe --version'],
           );
           process.stdin.writeln('n');
           await process.stdin.close();

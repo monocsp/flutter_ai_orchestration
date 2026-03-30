@@ -1,39 +1,8 @@
 import 'dart:io';
 import 'package:path/path.dart' as p;
+import 'agent_detection_service.dart';
 
 class AgentRunnerService {
-  String? _cachedPath;
-
-  /// 로그인 셸에서 실제 PATH를 가져옵니다.
-  Future<String> _getLoginShellPath() async {
-    if (_cachedPath != null) return _cachedPath!;
-
-    final shell = Platform.environment['SHELL'] ?? '/bin/zsh';
-    try {
-      final result = await Process.run(
-        shell,
-        ['-l', '-c', 'echo \$PATH'],
-      ).timeout(const Duration(seconds: 10));
-
-      if (result.exitCode == 0) {
-        _cachedPath = (result.stdout as String).trim();
-        if (_cachedPath!.isNotEmpty) return _cachedPath!;
-      }
-    } catch (_) {}
-
-    _cachedPath = [
-      '/opt/homebrew/bin',
-      '/usr/local/bin',
-      '/usr/bin',
-      '/bin',
-      '${Platform.environment['HOME']}/.local/bin',
-      '${Platform.environment['HOME']}/.nvm/versions/node/current/bin',
-      '${Platform.environment['HOME']}/.npm-global/bin',
-      Platform.environment['PATH'] ?? '',
-    ].join(':');
-
-    return _cachedPath!;
-  }
 
   /// 래핑 프롬프트: 모든 AI 호출 앞에 자동 주입
   static const _memoWrapper = '''
@@ -62,7 +31,7 @@ class AgentRunnerService {
     Duration timeout = const Duration(minutes: 20),
   }) async {
     final shell = Platform.environment['SHELL'] ?? '/bin/zsh';
-    final loginPath = await _getLoginShellPath();
+    final loginPath = await AgentDetectionService.getLoginShellPath();
 
     // 래핑 프롬프트 주입
     final wrappedPrompt = '$_memoWrapper$promptContent';
@@ -74,12 +43,13 @@ class AgentRunnerService {
 
     try {
       final cmd = _buildCommand(agentId, promptFile.path);
+      // PATH를 셸 명령 안에서 export (environment 덮어쓰기 방지)
+      final wrappedCmd = 'export PATH="$loginPath:\$PATH"; $cmd';
 
       final result = await Process.run(
         shell,
-        ['-l', '-c', cmd],
+        ['-c', wrappedCmd],
         workingDirectory: workingDir,
-        environment: {'PATH': loginPath, 'LANG': 'en_US.UTF-8'},
       ).timeout(timeout);
 
       final stdout = (result.stdout as String).trim();
