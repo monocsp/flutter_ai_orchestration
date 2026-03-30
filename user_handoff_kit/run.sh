@@ -330,13 +330,38 @@ select_ai_with_check() {
 
 provider_name="$(select_ai_with_check '2) 분석 AI를 선택하세요 (Step 1, 3, 5)')"
 reviewer_name="$(select_ai_with_check '3) 검토 AI를 선택하세요 (Step 2, 4)')"
-run_objective="$(read_choice '4) 이번 실행 목적을 선택하세요' 0 '비판 검토 포함 실행 계획' 'QA/버그 대응 분석' '기능 기획 검증' '리팩터링 계획' '기타')"
+run_objective="$(read_choice '4) 이번 실행 목적을 선택하세요' 0 \
+  '비판 검토 포함 실행 계획' \
+  'QA/버그 대응 분석' \
+  '기능 기획 검증' \
+  '리팩터링 계획' \
+  '경영진 피드백 분석' \
+  'UX/기획 검증' \
+  '기타')"
 if [[ "$run_objective" == "기타" ]]; then
   run_objective="$(read_required_text '실제 실행 목적을 입력하세요')"
 fi
 criticism_level="$(read_choice '5) 비판 검토 강도를 선택하세요' 2 '낮음' '보통' '높음' '매우 높음')"
-risk_focus="$(read_text_with_default '6) 꼭 확인해야 하는 리스크를 입력하세요(쉼표 구분 가능)' '공통 컴포넌트 영향, 상태 관리, 라이프사이클, 회귀 위험')"
-output_format="$(read_choice '7) 원하는 결과 형식을 선택하세요' 1 '간결한 실행 계획' '상세 실행 계획' '리스크 중심 검토서' 'QA 체크리스트 포함 결과' '의사결정 로그 포함 결과')"
+
+# 실행 목적에 따라 리스크 포커스 기본값 분기
+case "$run_objective" in
+  "경영진 피드백 분석"|"UX/기획 검증"|"기능 기획 검증")
+    default_risk_focus='의도 왜곡, 요구사항 누락, 실행 가능성, 이해관계자 해석 차이, 측정 기준 부재, MVP 범위 불명확'
+    ;;
+  *)
+    default_risk_focus='공통 컴포넌트 영향, 상태 관리, 라이프사이클, 회귀 위험'
+    ;;
+esac
+risk_focus="$(read_text_with_default '6) 꼭 확인해야 하는 리스크를 입력하세요(쉼표 구분 가능)' "$default_risk_focus")"
+
+output_format="$(read_choice '7) 원하는 결과 형식을 선택하세요' 1 \
+  '간결한 실행 계획' \
+  '상세 실행 계획' \
+  '리스크 중심 검토서' \
+  'QA 체크리스트 포함 결과' \
+  '의사결정 로그 포함 결과' \
+  '경영진 피드백 분석서' \
+  '기획 실행 로드맵')"
 
 printf '\n8) AI가 참고할 프로젝트 폴더 경로를 입력하세요\n' >&2
 printf '   없으면 Enter로 건너뜁니다: ' >&2
