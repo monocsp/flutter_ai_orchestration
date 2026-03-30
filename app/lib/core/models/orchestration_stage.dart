@@ -1,3 +1,5 @@
+import 'template_preset.dart';
+
 enum StageRole { analysis, critique }
 
 class OrchestrationStage {
@@ -6,8 +8,11 @@ class OrchestrationStage {
   final String description;
   final StageRole role;
   final String outputFileName;
-  final String promptTemplate;
+  final String promptTemplate; // 기본 템플릿 파일명 (analysis_prompt.md 등)
   final bool enabled;
+  final TemplatePreset templatePreset;
+  final bool manuallyEdited; // 유저가 이 단계를 직접 수정했는지
+  final String? customPromptContent; // 직접입력 시 프롬프트 내용
 
   const OrchestrationStage({
     required this.stepNumber,
@@ -17,7 +22,15 @@ class OrchestrationStage {
     required this.outputFileName,
     required this.promptTemplate,
     this.enabled = true,
+    this.templatePreset = TemplatePreset.developer,
+    this.manuallyEdited = false,
+    this.customPromptContent,
   });
+
+  /// 현재 프리셋에 맞는 실제 템플릿 키
+  String get resolvedTemplateKey {
+    return templatePreset.templateKeyFor(promptTemplate);
+  }
 
   OrchestrationStage copyWith({
     int? stepNumber,
@@ -27,6 +40,9 @@ class OrchestrationStage {
     String? outputFileName,
     String? promptTemplate,
     bool? enabled,
+    TemplatePreset? templatePreset,
+    bool? manuallyEdited,
+    String? customPromptContent,
   }) {
     return OrchestrationStage(
       stepNumber: stepNumber ?? this.stepNumber,
@@ -36,6 +52,9 @@ class OrchestrationStage {
       outputFileName: outputFileName ?? this.outputFileName,
       promptTemplate: promptTemplate ?? this.promptTemplate,
       enabled: enabled ?? this.enabled,
+      templatePreset: templatePreset ?? this.templatePreset,
+      manuallyEdited: manuallyEdited ?? this.manuallyEdited,
+      customPromptContent: customPromptContent ?? this.customPromptContent,
     );
   }
 

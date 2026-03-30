@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models/orchestration_stage.dart';
+import '../../core/models/template_preset.dart';
 import '../../providers/session_providers.dart';
 
 class StageCard extends ConsumerStatefulWidget {
@@ -54,11 +55,27 @@ class _StageCardState extends ConsumerState<StageCard> {
   Future<void> _loadTemplate() async {
     setState(() => _isLoading = true);
     try {
+      final stage = widget.stage;
       final configLoader = ref.read(configLoaderProvider);
-      final content =
-          await configLoader.loadTemplate(widget.stage.promptTemplate);
+
+      // 직접입력이면 customPromptContent 사용
+      if (stage.templatePreset == TemplatePreset.custom) {
+        if (mounted) {
+          setState(() {
+            _templateContent = stage.customPromptContent ?? '';
+            _isCustom = true;
+            _isLoading = false;
+            _isEditing = true;
+            _editController.text = _templateContent!;
+          });
+        }
+        return;
+      }
+
+      final content = await configLoader.loadTemplateForPreset(
+          stage.promptTemplate, stage.templatePreset);
       final hasCustom =
-          await configLoader.hasCustomTemplate(widget.stage.promptTemplate);
+          await configLoader.hasCustomTemplate(stage.resolvedTemplateKey);
       if (mounted) {
         setState(() {
           _templateContent = content.isNotEmpty ? content : null;
@@ -80,18 +97,28 @@ class _StageCardState extends ConsumerState<StageCard> {
   }
 
   Future<void> _saveCustom() async {
-    final configLoader = ref.read(configLoaderProvider);
-    await configLoader.saveCustomTemplate(
-        widget.stage.promptTemplate, _editController.text);
+    final content = _editController.text;
+
+    if (widget.stage.templatePreset == TemplatePreset.custom) {
+      // 직접입력 모드: session state에 저장
+      ref.read(sessionProvider.notifier).setStageCustomPrompt(
+          widget.stageIndex, content);
+    } else {
+      // 프리셋 기반 커스텀: 파일로 저장
+      final configLoader = ref.read(configLoaderProvider);
+      await configLoader.saveCustomTemplate(
+          widget.stage.resolvedTemplateKey, content);
+    }
+
     setState(() {
-      _templateContent = _editController.text;
+      _templateContent = content;
       _isEditing = false;
       _isCustom = true;
     });
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('커스텀 템플릿이 저장되었습니다'),
+          content: Text('프롬프트가 저장되었습니다'),
           behavior: SnackBarBehavior.floating,
           duration: Duration(seconds: 2),
         ),
@@ -237,6 +264,71 @@ class _StageCardState extends ConsumerState<StageCard> {
             ),
 
             const SizedBox(height: 16),
+
+            // 프롬프트 프리셋 선택
+            Row(
+              children: [
+                const Text(
+                  '프롬프트 유형',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF334155),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Tooltip(
+                  message: '1단계에서 선택하면 수동 편집하지 않은 나머지 단계도 함께 변경됩니다.',
+                  child: Icon(Icons.help_outline_rounded, size: 14, color: Colors.grey.shade400),
+                ),
+                const Spacer(),
+                SizedBox(
+                  width: 200,
+                  child: DropdownButtonFormField<TemplatePreset>(
+                    initialValue: stage.templatePreset,
+                    isExpanded: true,
+                    style: const TextStyle(fontSize: 12, color: Color(0xFF0F172A)),
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    ),
+                    items: TemplatePreset.values.map((preset) {
+                      return DropdownMenuItem<TemplatePreset>(
+                        value: preset,
+                        child: Text(
+                          preset.label,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: preset == TemplatePreset.custom
+                                ? const Color(0xFF0D9488)
+                                : const Color(0xFF0F172A),
+                            fontWeight: preset == TemplatePreset.custom
+                                ? FontWeight.w600
+                                : FontWeight.normal,
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                    onChanged: (preset) {
+                      if (preset == null) return;
+                      // 1단계(index 0)에서 변경하면 cascade
+                      ref.read(sessionProvider.notifier).setStageTemplatePreset(
+                        widget.stageIndex,
+                        preset,
+                        cascadeFromFirst: widget.stageIndex == 0,
+                      );
+                      _loadTemplate();
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              stage.templatePreset.description,
+              style: TextStyle(fontSize: 11, color: Colors.grey.shade400),
+            ),
+            const SizedBox(height: 12),
 
             // Template content toolbar
             Row(
