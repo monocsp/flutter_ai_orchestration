@@ -21,18 +21,23 @@ class SessionSetupPanel extends ConsumerStatefulWidget {
 class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
   final _riskController = TextEditingController();
   final _titleController = TextEditingController();
+  final _outputFormatController = TextEditingController();
   bool _isStarting = false;
+  bool _riskManuallyEdited = false;
+  String _outputFormatMode = '직접입력'; // '직접입력' or preset name
 
   @override
   void initState() {
     super.initState();
-    _riskController.text = '공통 컴포넌트 영향, 상태 관리, 라이프사이클, 회귀 위험';
+    _riskController.text = '';
+    _outputFormatController.text = '';
   }
 
   @override
   void dispose() {
     _riskController.dispose();
     _titleController.dispose();
+    _outputFormatController.dispose();
     super.dispose();
   }
 
@@ -40,13 +45,12 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
   Widget build(BuildContext context) {
     final session = ref.watch(sessionProvider);
     final agentStatus = ref.watch(agentStatusProvider);
-    final theme = Theme.of(context);
 
     return ListView(
         padding: const EdgeInsets.all(16),
         children: [
         // Section: Title
-        _fieldLabel(context, '오케스트레이션 제목'),
+        _fieldLabelWithHelp(context, '오케스트레이션 제목', 'title'),
         const SizedBox(height: 4),
         TextField(
           controller: _titleController,
@@ -84,7 +88,7 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
                         const SizedBox(height: 4),
                         Text(
                           _fileName(session.sourceDocumentPath!),
-                          style: theme.textTheme.bodyMedium?.copyWith(
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                             fontWeight: FontWeight.w600,
                             color: const Color(0xFF0F172A),
                           ),
@@ -100,7 +104,7 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
                         const SizedBox(height: 4),
                         Text(
                           '파일을 드래그하거나 클릭',
-                          style: theme.textTheme.labelMedium,
+                          style: Theme.of(context).textTheme.labelMedium,
                         ),
                       ],
                     ),
@@ -136,7 +140,7 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
         const SizedBox(height: 16),
 
         // Project root
-        _fieldLabel(context, '참고 프로젝트 루트'),
+        _fieldLabelWithHelp(context, '참고 프로젝트 루트', 'projectRoot'),
         const SizedBox(height: 4),
         _pathSelector(
           context,
@@ -153,7 +157,7 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
         const SizedBox(height: 12),
 
         // Output root
-        _fieldLabel(context, '출력 루트 경로'),
+        _fieldLabelWithHelp(context, '출력 루트 경로', 'outputRoot'),
         const SizedBox(height: 4),
         _pathSelector(
           context,
@@ -175,7 +179,7 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
         _sectionTitle(context, 'ORCHESTRATION'),
         const SizedBox(height: 12),
 
-        _fieldLabel(context, '프리셋'),
+        _fieldLabelWithHelp(context, '프리셋', 'preset'),
         const SizedBox(height: 4),
         _dropdown<OrchestrationPreset>(
           context,
@@ -189,7 +193,7 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
 
         const SizedBox(height: 12),
 
-        _fieldLabel(context, '분석 Agent (Step 1, 3, 5)'),
+        _fieldLabelWithHelp(context, '분석 Agent (Step 1, 3, 5)', 'analysisAgent'),
         const SizedBox(height: 4),
         _agentDropdown(
           context,
@@ -204,7 +208,7 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
 
         const SizedBox(height: 12),
 
-        _fieldLabel(context, '검토 Agent (Step 2, 4)'),
+        _fieldLabelWithHelp(context, '검토 Agent (Step 2, 4)', 'criticAgent'),
         const SizedBox(height: 4),
         _agentDropdown(
           context,
@@ -222,10 +226,10 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
         const SizedBox(height: 12),
 
         // Section: Settings
-        _sectionTitle(context, 'SETTINGS'),
+        _sectionTitleWithHelp(context, 'SETTINGS', 'settings'),
         const SizedBox(height: 12),
 
-        _fieldLabel(context, '실행 목적'),
+        _fieldLabelWithHelp(context, '실행 목적', 'runObjective'),
         const SizedBox(height: 4),
         _dropdown<String>(
           context,
@@ -235,13 +239,19 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
           onChanged: (v) {
             if (v != null) {
               ref.read(sessionProvider.notifier).setRunObjective(v);
+              // 리스크 포커스를 수동 편집하지 않았으면 실행 목적에 맞게 자동 갱신
+              if (!_riskManuallyEdited) {
+                final newDefault = SessionConfig.defaultRiskFocus(v);
+                _riskController.text = newDefault;
+                ref.read(sessionProvider.notifier).setRiskFocus(newDefault);
+              }
             }
           },
         ),
 
         const SizedBox(height: 12),
 
-        _fieldLabel(context, '비판 강도'),
+        _fieldLabelWithHelp(context, '비판 강도', 'criticismLevel'),
         const SizedBox(height: 4),
         _dropdown<String>(
           context,
@@ -257,33 +267,34 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
 
         const SizedBox(height: 12),
 
-        _fieldLabel(context, '리스크 포커스'),
+        _fieldLabelWithHelp(context, '리스크 포커스', 'riskFocus'),
         const SizedBox(height: 4),
         TextField(
           controller: _riskController,
           style: const TextStyle(fontSize: 13),
           maxLines: 2,
-          onChanged: (v) =>
-              ref.read(sessionProvider.notifier).setRiskFocus(v),
+          decoration: InputDecoration(
+            hintText: '비워두면 AI가 계획서를 보고 자동 결정',
+            hintStyle: TextStyle(fontSize: 12, color: Colors.grey.shade400),
+          ),
+          onChanged: (v) {
+            _riskManuallyEdited = true;
+            ref.read(sessionProvider.notifier).setRiskFocus(v);
+          },
         ),
 
         const SizedBox(height: 12),
 
-        _fieldLabel(context, '결과 형식'),
+        _fieldLabelWithHelp(context, '결과 형식', 'outputFormat'),
         const SizedBox(height: 4),
-        _dropdown<String>(
-          context,
-          value: session.outputFormat,
-          items: SessionConfig.outputFormats,
-          labelOf: (s) => s,
-          onChanged: (v) {
-            if (v != null) {
-              ref.read(sessionProvider.notifier).setOutputFormat(v);
-            }
-          },
-        ),
+        _outputFormatSelector(context),
 
-        const SizedBox(height: 24),
+        const SizedBox(height: 16),
+
+        // 예상 소요 시간 안내
+        _estimatedTimeInfo(session.stages.where((s) => s.enabled).length),
+
+        const SizedBox(height: 12),
 
         // Orchestration start button (throttled)
         SizedBox(
@@ -298,11 +309,9 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
                     setState(() => _isStarting = true);
                     try {
                       final title = _titleController.text;
-                      // 즉시 스레드 뷰로 전환
                       ref.read(workbenchViewProvider.notifier).setView(
                           WorkbenchView.thread);
                       _titleController.clear();
-                      // 비동기로 오케스트레이션 시작 (await 하지 않음 — 백그라운드 진행)
                       ref
                           .read(threadListProvider.notifier)
                           .startOrchestration(customTitle: title);
@@ -317,7 +326,6 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
                         );
                       }
                     } finally {
-                      // 3초 후 버튼 재활성화
                       await Future.delayed(const Duration(seconds: 3));
                       if (mounted) setState(() => _isStarting = false);
                     }
@@ -363,13 +371,165 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
     );
   }
 
-  Widget _fieldLabel(BuildContext context, String label) {
-    return Text(
-      label,
-      style: Theme.of(context).textTheme.labelMedium?.copyWith(
-            fontWeight: FontWeight.w600,
-            color: const Color(0xFF334155),
+  Widget _sectionTitleWithHelp(BuildContext context, String title, String helpKey) {
+    return Row(
+      children: [
+        Text(
+          title,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: Colors.grey.shade500,
+            letterSpacing: 1.2,
           ),
+        ),
+        const SizedBox(width: 4),
+        _helpIcon(context, helpKey),
+      ],
+    );
+  }
+
+  Widget _fieldLabelWithHelp(BuildContext context, String label, String helpKey) {
+    return Row(
+      children: [
+        Text(
+          label,
+          style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF334155),
+              ),
+        ),
+        const SizedBox(width: 4),
+        _helpIcon(context, helpKey),
+      ],
+    );
+  }
+
+  /// 예상 소요 시간 안내 위젯
+  Widget _estimatedTimeInfo(int enabledStageCount) {
+    // 설정 자동 분석: ~2분, 각 단계: ~최대 20분
+    // 실제로는 단계당 3~10분이지만, 최대치 기준으로 안내
+    const autoAnalysisMin = 2;
+    const perStageMaxMin = 20;
+    const perStageTypicalMin = 5;
+
+    final maxMinutes = autoAnalysisMin + (enabledStageCount * perStageMaxMin);
+    final typicalMinutes = autoAnalysisMin + (enabledStageCount * perStageTypicalMin);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0F9FF),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFBAE6FD)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.schedule, size: 14, color: Colors.blue.shade400),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '예상 소요 시간: 약 $typicalMinutes분 ~ 최대 $maxMinutes분 ($enabledStageCount단계)',
+              style: TextStyle(
+                fontSize: 11,
+                color: Colors.blue.shade700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 결과 형식: 드롭다운(프리셋 선택) + 텍스트필드(직접입력/편집) 복합 위젯
+  Widget _outputFormatSelector(BuildContext context) {
+    // 드롭다운 선택지: 직접입력 + 프리셋 목록 (자동 제외)
+    final presets = SessionConfig.outputFormats.where((f) => f != '자동').toList();
+    final dropdownItems = ['직접입력', ...presets];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // 드롭다운
+        DropdownButtonFormField<String>(
+          initialValue: dropdownItems.contains(_outputFormatMode) ? _outputFormatMode : '직접입력',
+          isExpanded: true,
+          style: const TextStyle(fontSize: 13, color: Color(0xFF0F172A)),
+          items: dropdownItems
+              .map((item) => DropdownMenuItem<String>(
+                    value: item,
+                    child: Text(
+                      item,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: item == '직접입력'
+                            ? const Color(0xFF0D9488)
+                            : const Color(0xFF0F172A),
+                        fontWeight: item == '직접입력'
+                            ? FontWeight.w600
+                            : FontWeight.normal,
+                      ),
+                    ),
+                  ))
+              .toList(),
+          onChanged: (v) {
+            if (v == null) return;
+            setState(() {
+              _outputFormatMode = v;
+              if (v != '직접입력') {
+                // 프리셋 선택 → 텍스트필드에 내용 채움
+                _outputFormatController.text = v;
+                ref.read(sessionProvider.notifier).setOutputFormat(v);
+              }
+              // 직접입력 선택 시 텍스트필드 내용 유지 (지우지 않음)
+            });
+          },
+        ),
+        const SizedBox(height: 6),
+        // 텍스트필드
+        TextField(
+          controller: _outputFormatController,
+          style: const TextStyle(fontSize: 13),
+          maxLines: 2,
+          decoration: InputDecoration(
+            hintText: '비워두면 계획서를 보고 AI가 결정합니다',
+            hintStyle: TextStyle(fontSize: 12, color: Colors.grey.shade400),
+          ),
+          onChanged: (v) {
+            // 유저가 타이핑하는 순간 → 직접입력 모드로 전환
+            if (_outputFormatMode != '직접입력') {
+              setState(() => _outputFormatMode = '직접입력');
+            }
+            ref.read(sessionProvider.notifier).setOutputFormat(v);
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _helpIcon(BuildContext context, String helpKey) {
+    final helpText = SessionConfig.helpTexts[helpKey];
+    if (helpText == null) return const SizedBox.shrink();
+
+    return Tooltip(
+      message: helpText,
+      preferBelow: false,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      textStyle: const TextStyle(
+        fontSize: 12,
+        color: Colors.white,
+        height: 1.4,
+      ),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E293B),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      waitDuration: const Duration(milliseconds: 300),
+      child: Icon(
+        Icons.help_outline_rounded,
+        size: 14,
+        color: Colors.grey.shade400,
+      ),
     );
   }
 
