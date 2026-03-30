@@ -100,16 +100,9 @@ class _StageCardState extends ConsumerState<StageCard> {
   Future<void> _saveCustom() async {
     final content = _editController.text;
 
-    if (widget.stage.templatePreset == TemplatePreset.custom) {
-      // 직접입력 모드: session state에 저장
-      ref.read(sessionProvider.notifier).setStageCustomPrompt(
-          widget.stageIndex, content);
-    } else {
-      // 프리셋 기반 커스텀: 파일로 저장
-      final configLoader = ref.read(configLoaderProvider);
-      await configLoader.saveCustomTemplate(
-          widget.stage.resolvedTemplateKey, content);
-    }
+    // 항상 직접입력 모드로 session state에 저장
+    ref.read(sessionProvider.notifier).setStageCustomPrompt(
+        widget.stageIndex, content);
 
     setState(() {
       _templateContent = content;
@@ -345,7 +338,13 @@ class _StageCardState extends ConsumerState<StageCard> {
                 const Spacer(),
                 if (!_isEditing && _templateContent != null)
                   TextButton.icon(
-                    onPressed: () => setState(() => _isEditing = true),
+                    onPressed: () {
+                      // 편집 시작 → 직접입력 모드로 전환 + 현재 내용 보존
+                      final currentContent = _editController.text;
+                      ref.read(sessionProvider.notifier).setStageCustomPrompt(
+                          widget.stageIndex, currentContent);
+                      setState(() => _isEditing = true);
+                    },
                     icon: const Icon(Icons.edit, size: 14),
                     label: const Text('편집'),
                     style: TextButton.styleFrom(
