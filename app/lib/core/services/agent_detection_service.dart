@@ -2,6 +2,41 @@ import 'dart:io';
 import '../models/agent_provider.dart';
 
 class AgentDetectionService {
+  String? _cachedPath;
+
+  /// 로그인 셸에서 실제 PATH를 가져옵니다.
+  /// .app 번들로 실행 시 Finder가 터미널 PATH를 상속하지 않는 문제를 해결합니다.
+  Future<String> _getLoginShellPath() async {
+    if (_cachedPath != null) return _cachedPath!;
+
+    final shell = Platform.environment['SHELL'] ?? '/bin/zsh';
+    try {
+      final result = await Process.run(
+        shell,
+        ['-l', '-c', 'echo \$PATH'],
+      ).timeout(const Duration(seconds: 10));
+
+      if (result.exitCode == 0) {
+        _cachedPath = (result.stdout as String).trim();
+        if (_cachedPath!.isNotEmpty) return _cachedPath!;
+      }
+    } catch (_) {}
+
+    // 폴백: 일반적인 경로를 직접 추가
+    _cachedPath = [
+      '/opt/homebrew/bin',
+      '/usr/local/bin',
+      '/usr/bin',
+      '/bin',
+      '${Platform.environment['HOME']}/.local/bin',
+      '${Platform.environment['HOME']}/.nvm/versions/node/current/bin',
+      '${Platform.environment['HOME']}/.npm-global/bin',
+      Platform.environment['PATH'] ?? '',
+    ].join(':');
+
+    return _cachedPath!;
+  }
+
   Future<List<AgentInstallStatus>> detectAll() async {
     final results = <AgentInstallStatus>[];
     for (final agent in AgentProvider.builtIn) {
@@ -18,29 +53,32 @@ class AgentDetectionService {
   }
 
   Future<AgentInstallStatus> _detect(AgentProvider agent) async {
+    final loginPath = await _getLoginShellPath();
+    final shell = Platform.environment['SHELL'] ?? '/bin/zsh';
+    final env = {'PATH': loginPath, 'LANG': 'en_US.UTF-8'};
+
     for (final exe in agent.executableNames) {
       try {
-        final shell = Platform.environment['SHELL'] ?? '/bin/zsh';
-
-        // 1) which로 경로 확인
+        // 1) which로 경로 확인 — 로그인 셸의 PATH 사용
         final whichResult = await Process.run(
           shell,
           ['-l', '-c', 'which $exe'],
+          environment: env,
         ).timeout(const Duration(seconds: 10));
         if (whichResult.exitCode != 0) continue;
 
         final path = (whichResult.stdout as String).trim().split('\n').first;
         if (path.isEmpty) continue;
 
-        // 2) --version 실행 (stdin에 "n" 전달하여 대화형 프롬프트 방지)
+        // 2) --version 실행
         String? version;
         bool canExecute = false;
         try {
           final process = await Process.start(
             shell,
             ['-l', '-c', '$exe --version'],
+            environment: env,
           );
-          // stdin에 "n"을 넣어서 대화형 프롬프트가 걸리지 않게
           process.stdin.writeln('n');
           await process.stdin.close();
 
@@ -53,7 +91,6 @@ class AgentDetectionService {
 
           final allOutput = '$stdout\n$stderr'.toLowerCase();
 
-          // 명확한 미설치 패턴만 감지
           if (allOutput.contains('cannot find') ||
               allOutput.contains('command not found') ||
               allOutput.contains('not installed') ||
@@ -64,7 +101,6 @@ class AgentDetectionService {
             version = stdout.trim().split('\n').first;
           }
         } catch (_) {
-          // timeout 등 → 실행 불가 판정
           canExecute = false;
         }
 

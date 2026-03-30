@@ -2,6 +2,39 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 
 class AgentRunnerService {
+  String? _cachedPath;
+
+  /// 로그인 셸에서 실제 PATH를 가져옵니다.
+  Future<String> _getLoginShellPath() async {
+    if (_cachedPath != null) return _cachedPath!;
+
+    final shell = Platform.environment['SHELL'] ?? '/bin/zsh';
+    try {
+      final result = await Process.run(
+        shell,
+        ['-l', '-c', 'echo \$PATH'],
+      ).timeout(const Duration(seconds: 10));
+
+      if (result.exitCode == 0) {
+        _cachedPath = (result.stdout as String).trim();
+        if (_cachedPath!.isNotEmpty) return _cachedPath!;
+      }
+    } catch (_) {}
+
+    _cachedPath = [
+      '/opt/homebrew/bin',
+      '/usr/local/bin',
+      '/usr/bin',
+      '/bin',
+      '${Platform.environment['HOME']}/.local/bin',
+      '${Platform.environment['HOME']}/.nvm/versions/node/current/bin',
+      '${Platform.environment['HOME']}/.npm-global/bin',
+      Platform.environment['PATH'] ?? '',
+    ].join(':');
+
+    return _cachedPath!;
+  }
+
   /// 래핑 프롬프트: 모든 AI 호출 앞에 자동 주입
   static const _memoWrapper = '''
 [필수 지시 1] 결과의 전체 내용을 반드시 이 응답에 직접 출력하세요. 파일에 저장하거나 별도 경로에 쓰지 마세요. 요약만 출력하는 것은 금지입니다.
@@ -29,6 +62,7 @@ class AgentRunnerService {
     Duration timeout = const Duration(minutes: 20),
   }) async {
     final shell = Platform.environment['SHELL'] ?? '/bin/zsh';
+    final loginPath = await _getLoginShellPath();
 
     // 래핑 프롬프트 주입
     final wrappedPrompt = '$_memoWrapper$promptContent';
@@ -45,7 +79,7 @@ class AgentRunnerService {
         shell,
         ['-l', '-c', cmd],
         workingDirectory: workingDir,
-        environment: {'LANG': 'en_US.UTF-8'},
+        environment: {'PATH': loginPath, 'LANG': 'en_US.UTF-8'},
       ).timeout(timeout);
 
       final stdout = (result.stdout as String).trim();
