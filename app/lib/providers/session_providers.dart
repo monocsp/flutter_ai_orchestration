@@ -6,6 +6,7 @@ import '../core/models/agent_provider.dart';
 import '../core/models/orchestration_preset.dart';
 import '../core/models/orchestration_stage.dart';
 import '../core/models/session_config.dart';
+import '../core/models/template_preset.dart';
 import '../core/services/config_loader_service.dart';
 import '../core/services/session_builder_service.dart';
 import '../core/services/template_renderer_service.dart';
@@ -192,6 +193,44 @@ class SessionNotifier extends Notifier<SessionState> {
       state = state.copyWith(riskFocus: value);
   void setOutputFormat(String value) =>
       state = state.copyWith(outputFormat: value);
+
+  /// 특정 단계의 템플릿 프리셋 변경
+  /// [cascadeFromFirst]: true면 1단계 변경 시 수동 편집 안 된 단계도 함께 변경
+  void setStageTemplatePreset(int index, TemplatePreset preset, {bool cascadeFromFirst = false}) {
+    final newStages = List<OrchestrationStage>.from(state.stages);
+    newStages[index] = newStages[index].copyWith(
+      templatePreset: preset,
+      manuallyEdited: true,
+      customPromptContent: preset == TemplatePreset.custom
+          ? newStages[index].customPromptContent
+          : null,
+    );
+
+    if (cascadeFromFirst && index == 0) {
+      // 1단계 변경 → 수동 편집 안 된 나머지 단계도 함께 변경
+      for (var i = 1; i < newStages.length; i++) {
+        if (!newStages[i].manuallyEdited) {
+          newStages[i] = newStages[i].copyWith(
+            templatePreset: preset,
+            customPromptContent: null,
+          );
+        }
+      }
+    }
+
+    state = state.copyWith(stages: newStages);
+  }
+
+  /// 특정 단계의 직접입력 프롬프트 내용 변경
+  void setStageCustomPrompt(int index, String content) {
+    final newStages = List<OrchestrationStage>.from(state.stages);
+    newStages[index] = newStages[index].copyWith(
+      templatePreset: TemplatePreset.custom,
+      manuallyEdited: true,
+      customPromptContent: content,
+    );
+    state = state.copyWith(stages: newStages);
+  }
 
   Future<SessionArtifact?> generateSession() async {
     if (state.sourceDocumentPath == null) return null;

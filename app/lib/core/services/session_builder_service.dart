@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import '../models/session_config.dart';
 import '../models/orchestration_stage.dart';
+import '../models/template_preset.dart';
 import 'config_loader_service.dart';
 import 'template_renderer_service.dart';
 
@@ -78,7 +79,11 @@ class SessionBuilderService {
           .replaceFirst('_prompt.md', '_result.md');
       final resultPath = p.join(resultsDir, resultFileName);
 
-      final template = await configLoader.loadTemplate(stage.promptTemplate);
+      // 직접입력이면 customPromptContent 사용, 아니면 프리셋별 템플릿 로드
+      final template = stage.templatePreset == TemplatePreset.custom
+          ? (stage.customPromptContent ?? '')
+          : await configLoader.loadTemplateForPreset(
+              stage.promptTemplate, stage.templatePreset);
       final rendered = templateRenderer.render(template, {
         'SOURCE_DOCUMENT_PATH': config.sourceDocumentPath,
         'PROVIDER_NAME': stage.role == StageRole.analysis

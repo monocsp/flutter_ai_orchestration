@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import '../data/builtin_templates.dart';
 import '../models/agent_provider.dart';
+import '../models/template_preset.dart';
 
 class ConfigLoaderService {
   final String configDirPath;
@@ -29,6 +30,15 @@ class ConfigLoaderService {
       }
     }
     return configs;
+  }
+
+  /// 프리셋에 맞는 템플릿 로드
+  Future<String> loadTemplateForPreset(String baseTemplateName, TemplatePreset preset) async {
+    if (preset == TemplatePreset.custom) {
+      return ''; // 직접입력은 빈 템플릿 반환
+    }
+    final resolvedName = preset.templateKeyFor(baseTemplateName);
+    return loadTemplate(resolvedName);
   }
 
   /// 템플릿 로드 우선순위: 커스텀 파일 → 기본 파일 → 내장 기본값
