@@ -23,16 +23,22 @@ class OrchestrationPreset {
 
   static List<OrchestrationPreset> get defaults => [
         OrchestrationPreset(
+          id: 'quick_3stage',
+          name: '빠른 3단계 경량형',
+          description: '분석 → 비판 → 최종 계획',
+          stages: OrchestrationStage.legacyThreeStages,
+        ),
+        OrchestrationPreset(
           id: 'default_5stage',
           name: '기본 5단계 비판형',
           description: '분석 → 비판 → 보강 → 재비판 → 최종 종합',
           stages: OrchestrationStage.defaultFiveStages,
         ),
         OrchestrationPreset(
-          id: 'quick_3stage',
-          name: '빠른 3단계 경량형',
-          description: '분석 → 비판 → 최종 계획 (기존 run.sh 호환)',
-          stages: OrchestrationStage.legacyThreeStages,
+          id: 'deep_7stage',
+          name: '정밀 7단계 심화형',
+          description: '분석 → 비판 → 보강 → 재비판 → 심화 → 3차 비판 → 최종 종합',
+          stages: OrchestrationStage.deepSevenStages,
         ),
         OrchestrationPreset(
           id: 'qa_bug',
