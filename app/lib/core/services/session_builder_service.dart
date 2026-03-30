@@ -75,7 +75,6 @@ class SessionBuilderService {
         'CRITICAL_REVIEW_RESULT_PATH': enabledStages.length > 1
             ? '${_resultPrefix(2)}_critical_review_result.md'
             : '',
-        'FINAL_RESULT_PATH': resultFileName,
       });
 
       await File(promptPath).writeAsString(rendered);
