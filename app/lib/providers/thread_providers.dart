@@ -1,8 +1,10 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/models/agent_provider.dart';
 import '../core/models/orchestration_thread.dart';
 import '../core/models/orchestration_stage.dart';
+import '../core/models/session_config.dart';
 import '../core/models/parallel_comparison.dart';
 import '../core/services/agent_detection_service.dart';
 import '../core/services/agent_runner_service.dart';
@@ -214,8 +216,118 @@ class ThreadListNotifier extends Notifier<ThreadListState> {
       return;
     }
 
-    // 세션 파일 생성
+    // Step 0.5: 설정 분석 — "자동" 설정이 있으면 AI가 계획서를 보고 결정
     final sessionNotifier = ref.read(sessionProvider.notifier);
+    final hasAuto = SessionConfig.hasAutoSettings(
+      runObjective: session.runObjective,
+      criticismLevel: session.criticismLevel,
+      riskFocus: session.riskFocus,
+      outputFormat: session.outputFormat,
+    );
+
+    // 설정 분석 단계 추가 (자동이든 수동이든 표시)
+    final settingsStage = StageThread(
+      stepNumber: 0,
+      name: hasAuto ? '설정 자동 분석' : '설정 확인',
+      description: hasAuto
+          ? '계획서를 읽고 최적의 분석 설정을 자동으로 결정합니다.'
+          : '사용자가 지정한 설정을 확인합니다.',
+      status: ThreadStatus.inProgress,
+      startedAt: DateTime.now(),
+    );
+
+    // 기존 stages 리스트에 설정 단계 삽입 (Step 0 다음, Step 1 이전)
+    {
+      final currentThread = _getThread(tempId)!;
+      final stages = List<StageThread>.from(currentThread.stages);
+      stages.insert(1, settingsStage); // index 0 = agent check, index 1 = settings
+      final threads = List<OrchestrationThread>.from(state.threads);
+      final threadIdx = state.threads.indexWhere((t) => t.id == tempId);
+      threads[threadIdx] = currentThread.copyWith(stages: stages);
+      state = state.copyWith(threads: threads);
+    }
+
+    if (hasAuto && session.sourceDocumentContent != null) {
+      // AI에게 계획서를 보여주고 설정 추천 받기
+      final autoPrompt = SessionConfig.buildAutoSettingsPrompt(
+        documentContent: session.sourceDocumentContent!,
+        runObjective: session.runObjective,
+        criticismLevel: session.criticismLevel,
+        riskFocus: session.riskFocus,
+        outputFormat: session.outputFormat,
+      );
+
+      final runner = AgentRunnerService();
+      final autoResult = await runner.run(
+        agentId: session.analysisAgent.id,
+        promptContent: autoPrompt,
+      );
+
+      if (autoResult.success) {
+        // JSON 파싱해서 설정 적용
+        final applied = _applyAutoSettings(
+          output: autoResult.output,
+          currentObjective: session.runObjective,
+          currentCriticism: session.criticismLevel,
+          currentRisk: session.riskFocus,
+          currentFormat: session.outputFormat,
+          sessionNotifier: sessionNotifier,
+        );
+
+        final settingsResult = StringBuffer();
+        settingsResult.writeln('## 설정 자동 분석 결과\n');
+        settingsResult.writeln('계획서를 분석하여 다음 설정을 자동으로 결정했습니다.\n');
+        for (final entry in applied) {
+          settingsResult.writeln('### ${entry['field']}');
+          settingsResult.writeln('- **선택**: ${entry['value']}');
+          settingsResult.writeln('- **이유**: ${entry['reason']}');
+          settingsResult.writeln('');
+        }
+
+        _updateStage(tempId, 1, (s) => s.copyWith(
+          status: ThreadStatus.completed,
+          resultContent: settingsResult.toString(),
+          completedAt: DateTime.now(),
+        ));
+      } else {
+        // AI 실패 시 기본값으로 폴백
+        _applyFallbackSettings(sessionNotifier: sessionNotifier);
+
+        _updateStage(tempId, 1, (s) => s.copyWith(
+          status: ThreadStatus.completed,
+          resultContent: '## 설정 자동 분석\n\n'
+              'AI 분석에 실패하여 기본 설정을 적용했습니다.\n\n'
+              '- 실행 목적: 비판 검토 포함 실행 계획\n'
+              '- 비판 강도: 높음\n'
+              '- 리스크 포커스: 공통 컴포넌트 영향, 상태 관리, 라이프사이클, 회귀 위험\n'
+              '- 결과 형식: 상세 실행 계획\n',
+          completedAt: DateTime.now(),
+        ));
+      }
+    } else {
+      // 수동 설정: 현재 설정을 보여주고 바로 진행
+      final confirmResult = StringBuffer();
+      confirmResult.writeln('## 현재 설정 확인\n');
+      confirmResult.writeln('| 항목 | 값 |');
+      confirmResult.writeln('|------|-----|');
+      confirmResult.writeln('| 실행 목적 | ${session.runObjective} |');
+      confirmResult.writeln('| 비판 강도 | ${session.criticismLevel} |');
+      confirmResult.writeln('| 리스크 포커스 | ${session.riskFocus} |');
+      confirmResult.writeln('| 결과 형식 | ${session.outputFormat} |');
+      confirmResult.writeln('| 분석 Agent | ${session.analysisAgent.displayName} |');
+      confirmResult.writeln('| 검토 Agent | ${session.criticAgent.displayName} |');
+      confirmResult.writeln('\n> 사용자 지정 설정으로 1차 분석을 시작합니다.');
+
+      _updateStage(tempId, 1, (s) => s.copyWith(
+        status: ThreadStatus.completed,
+        resultContent: confirmResult.toString(),
+        completedAt: DateTime.now(),
+      ));
+    }
+
+    if (state.isStopped) return;
+
+    // 세션 파일 생성 (설정이 확정된 후)
     final artifact = await sessionNotifier.generateSession();
     if (artifact == null) return;
 
@@ -225,12 +337,15 @@ class ThreadListNotifier extends Notifier<ThreadListState> {
     // 자동 실행 루프
     final runner = AgentRunnerService();
 
-    for (var i = 1; i < _getThread(tempId)!.stages.length; i++) {
+    // index 0 = agent check, index 1 = settings, index 2~ = 실제 단계
+    final stageStartIndex = 2;
+
+    for (var i = stageStartIndex; i < _getThread(tempId)!.stages.length; i++) {
       if (state.isStopped) break;
 
       final currentThread = _getThread(tempId)!;
       final stage = currentThread.stages[i];
-      final artifactIdx = i - 1;
+      final artifactIdx = i - stageStartIndex;
 
       // 이 단계를 진행 중으로
       String? promptContent;
@@ -264,11 +379,24 @@ class ThreadListNotifier extends Notifier<ThreadListState> {
       if (state.isStopped) break;
 
       if (result.success) {
-        // 결과 파일 저장
+        // 메모 파싱: 분석 과정 메모를 본문에서 분리
+        final parsed = AgentRunnerService.parseMemo(result.output);
+
+        // 결과 파일 저장 (본문만)
         if (stage.resultPath != null) {
-          await File(stage.resultPath!).writeAsString(result.output);
+          await File(stage.resultPath!).writeAsString(parsed.mainContent);
+
+          // 메모가 있으면 별도 파일로 저장
+          if (parsed.memo != null) {
+            final memoPath = stage.resultPath!.replaceAll(
+              RegExp(r'_result\.md$'),
+              '_memo.md',
+            );
+            await File(memoPath).writeAsString(parsed.memo!);
+          }
         }
 
+        // UI에는 메모 + 본문 합쳐서 표시 (유저가 과정을 볼 수 있도록)
         _updateStage(tempId, i, (s) => s.copyWith(
           status: ThreadStatus.completed,
           resultContent: result.output,
@@ -514,6 +642,112 @@ class ThreadListNotifier extends Notifier<ThreadListState> {
     state = state.copyWith(threads: threads);
   }
 
+  /// AI 응답에서 JSON을 파싱해 자동 설정 적용
+  List<Map<String, String>> _applyAutoSettings({
+    required String output,
+    required String currentObjective,
+    required String currentCriticism,
+    required String currentRisk,
+    required String currentFormat,
+    required SessionNotifier sessionNotifier,
+  }) {
+    final applied = <Map<String, String>>[];
+
+    try {
+      // JSON 블록 추출 (```json ... ``` 또는 { ... })
+      String jsonStr = output;
+      final jsonBlockMatch = RegExp(r'```json\s*([\s\S]*?)```').firstMatch(output);
+      if (jsonBlockMatch != null) {
+        jsonStr = jsonBlockMatch.group(1)!.trim();
+      } else {
+        final braceMatch = RegExp(r'\{[\s\S]*\}').firstMatch(output);
+        if (braceMatch != null) {
+          jsonStr = braceMatch.group(0)!;
+        }
+      }
+
+      final parsed = jsonDecode(jsonStr) as Map<String, dynamic>;
+
+      if (currentObjective == SessionConfig.autoValue && parsed.containsKey('runObjective')) {
+        final val = parsed['runObjective'] as String;
+        sessionNotifier.setRunObjective(val);
+        applied.add({
+          'field': '실행 목적',
+          'value': val,
+          'reason': (parsed['runObjectiveReason'] as String?) ?? '-',
+        });
+
+        // 리스크 포커스도 연동
+        if (currentRisk.isEmpty && !parsed.containsKey('riskFocus')) {
+          final autoRisk = SessionConfig.defaultRiskFocus(val);
+          sessionNotifier.setRiskFocus(autoRisk);
+          applied.add({
+            'field': '리스크 포커스 (실행 목적 연동)',
+            'value': autoRisk,
+            'reason': '실행 목적에 맞는 기본 리스크 포커스 자동 적용',
+          });
+        }
+      }
+
+      if (currentCriticism == SessionConfig.autoValue && parsed.containsKey('criticismLevel')) {
+        final val = parsed['criticismLevel'] as String;
+        sessionNotifier.setCriticismLevel(val);
+        applied.add({
+          'field': '비판 강도',
+          'value': val,
+          'reason': (parsed['criticismLevelReason'] as String?) ?? '-',
+        });
+      }
+
+      if (currentRisk.isEmpty && parsed.containsKey('riskFocus')) {
+        final val = parsed['riskFocus'] as String;
+        sessionNotifier.setRiskFocus(val);
+        applied.add({
+          'field': '리스크 포커스',
+          'value': val,
+          'reason': (parsed['riskFocusReason'] as String?) ?? '-',
+        });
+      }
+
+      if (currentFormat.isEmpty && parsed.containsKey('outputFormat')) {
+        final val = parsed['outputFormat'] as String;
+        sessionNotifier.setOutputFormat(val);
+        applied.add({
+          'field': '결과 형식',
+          'value': val,
+          'reason': (parsed['outputFormatReason'] as String?) ?? '-',
+        });
+      }
+    } catch (_) {
+      // 파싱 실패 시 폴백
+      _applyFallbackSettings(sessionNotifier: sessionNotifier);
+      applied.add({
+        'field': '전체',
+        'value': '기본값 적용',
+        'reason': 'AI 응답 파싱 실패로 기본 설정 적용',
+      });
+    }
+
+    return applied;
+  }
+
+  /// AI 분석 실패 시 기본값 적용
+  void _applyFallbackSettings({required SessionNotifier sessionNotifier}) {
+    final session = ref.read(sessionProvider);
+    if (session.runObjective == SessionConfig.autoValue) {
+      sessionNotifier.setRunObjective('비판 검토 포함 실행 계획');
+    }
+    if (session.criticismLevel == SessionConfig.autoValue) {
+      sessionNotifier.setCriticismLevel('높음');
+    }
+    if (session.riskFocus.isEmpty) {
+      sessionNotifier.setRiskFocus('공통 컴포넌트 영향, 상태 관리, 라이프사이클, 회귀 위험');
+    }
+    if (session.outputFormat.isEmpty) {
+      sessionNotifier.setOutputFormat('상세 실행 계획');
+    }
+  }
+
   void _updateThreadStatus(String threadId, ThreadStatus status) {
     final threadIdx = state.threads.indexWhere((t) => t.id == threadId);
     if (threadIdx < 0) return;
@@ -530,8 +764,9 @@ class ThreadListNotifier extends Notifier<ThreadListState> {
     final thread = state.threads[threadIdx];
     final stages = List<StageThread>.from(thread.stages);
 
-    for (var i = 1; i < stages.length; i++) {
-      final artifactIdx = i - 1;
+    // index 0 = agent check, index 1 = settings, index 2~ = 실제 단계
+    for (var i = 2; i < stages.length; i++) {
+      final artifactIdx = i - 2;
       stages[i] = stages[i].copyWith(
         promptPath: artifactIdx < artifact.promptPaths.length
             ? artifact.promptPaths[artifactIdx]
