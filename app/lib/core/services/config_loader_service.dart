@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:path/path.dart' as p;
+import '../data/builtin_templates.dart';
 import '../models/agent_provider.dart';
 
 class ConfigLoaderService {
@@ -30,20 +31,21 @@ class ConfigLoaderService {
     return configs;
   }
 
-  /// 템플릿 로드: 커스텀 버전이 있으면 우선, 없으면 기본 템플릿
+  /// 템플릿 로드 우선순위: 커스텀 파일 → 기본 파일 → 내장 기본값
   Future<String> loadTemplate(String templateName) async {
     // 1. 커스텀 템플릿 확인
     final customFile = File(p.join(_customTemplateDir, templateName));
     if (await customFile.exists()) {
       return customFile.readAsString();
     }
-    // 2. 기본 템플릿
+    // 2. 파일 시스템의 기본 템플릿
     final templateDir = p.join(p.dirname(configDirPath), 'templates');
     final file = File(p.join(templateDir, templateName));
     if (await file.exists()) {
       return file.readAsString();
     }
-    return '';
+    // 3. 코드에 내장된 기본값 (파일이 없어도 항상 동작)
+    return BuiltinTemplates.all[templateName] ?? '';
   }
 
   /// 커스텀 템플릿 저장
