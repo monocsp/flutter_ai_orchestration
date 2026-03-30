@@ -40,6 +40,7 @@ class _StageCardState extends ConsumerState<StageCard> {
   void didUpdateWidget(covariant StageCard oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.stage.promptTemplate != widget.stage.promptTemplate ||
+        oldWidget.stage.templatePreset != widget.stage.templatePreset ||
         oldWidget.stageIndex != widget.stageIndex) {
       _isEditing = false;
       _loadTemplate();
