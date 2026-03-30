@@ -7,6 +7,10 @@ import 'template_renderer_service.dart';
 
 class SessionArtifact {
   final String sessionDirPath;
+  final String resultsDirPath;
+  final String promptsDirPath;
+  final String memosDirPath;
+  final String metaDirPath;
   final String sessionSummaryPath;
   final String executionGuidePath;
   final List<String> promptPaths;
@@ -14,6 +18,10 @@ class SessionArtifact {
 
   const SessionArtifact({
     required this.sessionDirPath,
+    required this.resultsDirPath,
+    required this.promptsDirPath,
+    required this.memosDirPath,
+    required this.metaDirPath,
     required this.sessionSummaryPath,
     required this.executionGuidePath,
     required this.promptPaths,
@@ -43,7 +51,19 @@ class SessionBuilderService {
 
     final sessionDir =
         p.join(config.outputRootPath, 'session_${timestamp}_$docBaseName');
-    await Directory(sessionDir).create(recursive: true);
+
+    // 하위 디렉터리 생성
+    final resultsDir = p.join(sessionDir, 'results');
+    final promptsDir = p.join(sessionDir, 'prompts');
+    final memosDir = p.join(sessionDir, 'memos');
+    final metaDir = p.join(sessionDir, 'meta');
+
+    await Future.wait([
+      Directory(resultsDir).create(recursive: true),
+      Directory(promptsDir).create(recursive: true),
+      Directory(memosDir).create(recursive: true),
+      Directory(metaDir).create(recursive: true),
+    ]);
 
     final promptPaths = <String>[];
     final resultPaths = <String>[];
@@ -52,11 +72,11 @@ class SessionBuilderService {
         config.stages.where((s) => s.enabled).toList();
 
     for (final stage in enabledStages) {
-      final promptPath = p.join(sessionDir, stage.outputFileName);
+      final promptPath = p.join(promptsDir, stage.outputFileName);
       final resultFileName = stage.outputFileName
           .replaceFirst(RegExp(r'^\d+_'), '${_resultPrefix(stage.stepNumber)}_')
           .replaceFirst('_prompt.md', '_result.md');
-      final resultPath = p.join(sessionDir, resultFileName);
+      final resultPath = p.join(resultsDir, resultFileName);
 
       final template = await configLoader.loadTemplate(stage.promptTemplate);
       final rendered = templateRenderer.render(template, {
@@ -84,16 +104,20 @@ class SessionBuilderService {
       resultPaths.add(resultPath);
     }
 
-    final summaryPath = p.join(sessionDir, '00_session_summary.md');
+    final summaryPath = p.join(metaDir, '00_session_summary.md');
     await File(summaryPath).writeAsString(_buildSummary(config, createdAt, enabledStages));
 
-    final guidePath = p.join(sessionDir, '04_execution_guide.md');
+    final guidePath = p.join(metaDir, '04_execution_guide.md');
     await File(guidePath).writeAsString(
       _buildExecutionGuide(config, createdAt),
     );
 
     return SessionArtifact(
       sessionDirPath: sessionDir,
+      resultsDirPath: resultsDir,
+      promptsDirPath: promptsDir,
+      memosDirPath: memosDir,
+      metaDirPath: metaDir,
       sessionSummaryPath: summaryPath,
       executionGuidePath: guidePath,
       promptPaths: promptPaths,
@@ -118,6 +142,12 @@ class SessionBuilderService {
 - 비판 검토 강도: ${config.criticismLevel}
 - 리스크 포커스: ${config.riskFocus}
 - 결과 형식: ${config.outputFormat}
+
+## 폴더 구조
+- results/ — 각 단계의 분석/검토 결과 본문
+- prompts/ — 각 단계에 사용된 프롬프트
+- memos/  — AI의 분석 과정 메모
+- meta/   — 세션 요약, 실행 가이드, Agent 확인, 설정 분석
 
 ## 생성 파일
 $stageFiles
