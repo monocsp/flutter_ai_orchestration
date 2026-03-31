@@ -404,6 +404,8 @@ class ThreadListNotifier extends Notifier<ThreadListState> {
         criticismLevel: session.criticismLevel,
         riskFocus: session.riskFocus,
         outputFormat: session.outputFormat,
+        analysisMode: session.analysisMode,
+        userResultRequest: session.userResultRequest,
       );
 
       final runner = AgentRunnerService();
@@ -936,6 +938,33 @@ class ThreadListNotifier extends Notifier<ThreadListState> {
           'value': val,
           'reason': (parsed['outputFormatReason'] as String?) ?? '-',
         });
+      }
+
+      // 페르소나 파싱
+      if (parsed.containsKey('persona')) {
+        final val = parsed['persona'] as String;
+        sessionNotifier.setAutoPersona(val);
+        applied.add({
+          'field': '전문가 페르소나',
+          'value': val,
+          'reason': (parsed['personaReason'] as String?) ?? '-',
+        });
+      }
+
+      // 집중 포인트 파싱
+      if (parsed.containsKey('focusPoints')) {
+        final raw = parsed['focusPoints'];
+        final points = (raw is List)
+            ? raw.map((e) => e.toString()).toList()
+            : <String>[];
+        if (points.isNotEmpty) {
+          sessionNotifier.setAutoFocusPoints(points);
+          applied.add({
+            'field': '핵심 분석 포인트',
+            'value': points.join(', '),
+            'reason': '문서 내용 기반 자동 도출',
+          });
+        }
       }
     } catch (_) {
       // 파싱 실패 시 폴백

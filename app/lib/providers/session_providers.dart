@@ -83,10 +83,14 @@ class SessionState {
   final AgentProvider criticAgent;
   final OrchestrationPreset preset;
   final List<OrchestrationStage> stages;
+  final String analysisMode; // 'code' | 'planning' | 'executive' | 'prompt_eng' | 'custom'
   final String runObjective;
   final String criticismLevel;
   final String riskFocus;
   final String outputFormat;
+  final String userResultRequest; // 유저가 원하는 결과 요청
+  final String? autoPersona; // AI가 자동 생성한 페르소나
+  final List<String>? autoFocusPoints; // AI가 자동 생성한 집중 포인트
   final List<String> importedFiles;
   final SessionArtifact? lastArtifact;
   final bool isGenerating;
@@ -100,10 +104,14 @@ class SessionState {
     AgentProvider? criticAgent,
     OrchestrationPreset? preset,
     List<OrchestrationStage>? stages,
+    this.analysisMode = 'planning',
     this.runObjective = '자동',
     this.criticismLevel = '자동',
     this.riskFocus = '',
     this.outputFormat = '',
+    this.userResultRequest = '',
+    this.autoPersona,
+    this.autoFocusPoints,
     this.importedFiles = const [],
     this.lastArtifact,
     this.isGenerating = false,
@@ -123,10 +131,14 @@ class SessionState {
     AgentProvider? criticAgent,
     OrchestrationPreset? preset,
     List<OrchestrationStage>? stages,
+    String? analysisMode,
     String? runObjective,
     String? criticismLevel,
     String? riskFocus,
     String? outputFormat,
+    String? userResultRequest,
+    String? autoPersona,
+    List<String>? autoFocusPoints,
     List<String>? importedFiles,
     SessionArtifact? lastArtifact,
     bool? isGenerating,
@@ -141,10 +153,14 @@ class SessionState {
       criticAgent: criticAgent ?? this.criticAgent,
       preset: preset ?? this.preset,
       stages: stages ?? this.stages,
+      analysisMode: analysisMode ?? this.analysisMode,
       runObjective: runObjective ?? this.runObjective,
       criticismLevel: criticismLevel ?? this.criticismLevel,
       riskFocus: riskFocus ?? this.riskFocus,
       outputFormat: outputFormat ?? this.outputFormat,
+      userResultRequest: userResultRequest ?? this.userResultRequest,
+      autoPersona: autoPersona ?? this.autoPersona,
+      autoFocusPoints: autoFocusPoints ?? this.autoFocusPoints,
       importedFiles: importedFiles ?? this.importedFiles,
       lastArtifact: lastArtifact ?? this.lastArtifact,
       isGenerating: isGenerating ?? this.isGenerating,
@@ -193,6 +209,22 @@ class SessionNotifier extends Notifier<SessionState> {
 
   void setCriticAgent(AgentProvider agent) {
     state = state.copyWith(criticAgent: agent);
+  }
+
+  void setAnalysisMode(String mode) {
+    state = state.copyWith(analysisMode: mode);
+  }
+
+  void setUserResultRequest(String value) {
+    state = state.copyWith(userResultRequest: value);
+  }
+
+  void setAutoPersona(String persona) {
+    state = state.copyWith(autoPersona: persona);
+  }
+
+  void setAutoFocusPoints(List<String> points) {
+    state = state.copyWith(autoFocusPoints: points);
   }
 
   void setPreset(OrchestrationPreset preset) {
@@ -270,6 +302,10 @@ class SessionNotifier extends Notifier<SessionState> {
         criticismLevel: state.criticismLevel,
         riskFocus: state.riskFocus,
         outputFormat: state.outputFormat,
+        analysisMode: state.analysisMode,
+        userResultRequest: state.userResultRequest,
+        persona: state.autoPersona ?? '',
+        focusPoints: state.autoFocusPoints ?? [],
       );
       final artifact = await builder.buildSession(config);
       state = state.copyWith(lastArtifact: artifact, isGenerating: false);
