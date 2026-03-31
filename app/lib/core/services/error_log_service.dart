@@ -3,7 +3,7 @@ import 'package:path/path.dart' as p;
 
 class ErrorLogService {
   static final _logDir = p.join(
-    Directory.current.path,
+    p.dirname(Platform.resolvedExecutable),
     'logs',
   );
 
