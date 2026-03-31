@@ -213,7 +213,7 @@ class AgentRunnerService {
       case 'claude':
         return 'claude -p --dangerously-skip-permissions';
       case 'codex':
-        return 'codex exec -';
+        return 'codex exec --skip-git-repo-check -';
       case 'gemini':
         return 'gemini -p';
       default:
@@ -227,7 +227,7 @@ class AgentRunnerService {
       case 'claude':
         return 'cat \'$promptFilePath\' | claude -p --dangerously-skip-permissions';
       case 'codex':
-        return 'cat \'$promptFilePath\' | codex exec -';
+        return 'cat \'$promptFilePath\' | codex exec --skip-git-repo-check -';
       case 'gemini':
         return 'gemini -p "\$(cat \'$promptFilePath\')"';
       default:
