@@ -11,12 +11,19 @@ import '../core/services/config_loader_service.dart';
 import '../core/services/session_builder_service.dart';
 import '../core/services/template_renderer_service.dart';
 
+/// 실행 파일이 위치한 디렉토리 (인스톨러 배포 시에도 올바르게 동작)
+String _resolveAppDir() {
+  final exePath = Platform.resolvedExecutable;
+  return p.dirname(exePath);
+}
+
 // Handoff kit path detection
 final handoffKitPathProvider = Provider<String>((ref) {
-  // flutter run 시 cwd는 app/ 디렉터리
+  final appDir = _resolveAppDir();
   final cwd = Directory.current.path;
   final candidates = [
-    p.join(cwd, 'user_handoff_kit'),              // app/user_handoff_kit
+    p.join(appDir, 'user_handoff_kit'),            // exe와 같은 디렉토리 (인스톨러)
+    p.join(cwd, 'user_handoff_kit'),               // CWD (flutter run: app/)
     p.join(p.dirname(cwd), 'user_handoff_kit'),    // 프로젝트루트/user_handoff_kit
     p.join(cwd, '..', 'user_handoff_kit'),         // 상대경로
   ];
@@ -27,8 +34,8 @@ final handoffKitPathProvider = Provider<String>((ref) {
       return resolved;
     }
   }
-  final fallback = p.normalize(p.join(cwd, '..', 'user_handoff_kit'));
-  debugPrint('[CONFIG] handoff kit fallback: $fallback (cwd=$cwd)');
+  final fallback = p.normalize(p.join(appDir, 'user_handoff_kit'));
+  debugPrint('[CONFIG] handoff kit fallback: $fallback (appDir=$appDir, cwd=$cwd)');
   return fallback;
 });
 
@@ -88,7 +95,7 @@ class SessionState {
     this.lastArtifact,
     this.isGenerating = false,
   })  : outputRootPath =
-            outputRootPath ?? p.join(Directory.current.path, 'output'),
+            outputRootPath ?? p.join(_resolveAppDir(), 'output'),
         analysisAgent = analysisAgent ?? AgentProvider.builtIn[1],
         criticAgent = criticAgent ?? AgentProvider.builtIn[0],
         preset = preset ?? OrchestrationPreset.defaults[1],  // 5단계 기본

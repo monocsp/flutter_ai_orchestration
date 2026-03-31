@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg2v2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1D4ED8"/>
+      <stop offset="100%" style="stop-color:#1E3A8A"/>
+    </linearGradient>
+  </defs>
+  <!-- Background -->
+  <rect width="512" height="512" rx="100" fill="url(#bg2v2)"/>
+
+  <!-- Circuit board traces - thick white lines -->
+  <!-- Horizontal lines -->
+  <line x1="60" y1="180" x2="195" y2="180" stroke="white" stroke-width="5" opacity="0.9"/>
+  <line x1="317" y1="180" x2="452" y2="180" stroke="white" stroke-width="5" opacity="0.9"/>
+  <line x1="60" y1="332" x2="195" y2="332" stroke="white" stroke-width="5" opacity="0.9"/>
+  <line x1="317" y1="332" x2="452" y2="332" stroke="white" stroke-width="5" opacity="0.9"/>
+
+  <!-- Vertical lines -->
+  <line x1="180" y1="60" x2="180" y2="195" stroke="white" stroke-width="5" opacity="0.9"/>
+  <line x1="332" y1="60" x2="332" y2="195" stroke="white" stroke-width="5" opacity="0.9"/>
+  <line x1="180" y1="317" x2="180" y2="452" stroke="white" stroke-width="5" opacity="0.9"/>
+  <line x1="332" y1="317" x2="332" y2="452" stroke="white" stroke-width="5" opacity="0.9"/>
+
+  <!-- Circuit endpoint dots - bright white -->
+  <circle cx="60" cy="180" r="10" fill="white"/>
+  <circle cx="452" cy="180" r="10" fill="white"/>
+  <circle cx="60" cy="332" r="10" fill="white"/>
+  <circle cx="452" cy="332" r="10" fill="white"/>
+  <circle cx="180" cy="60" r="10" fill="white"/>
+  <circle cx="332" cy="60" r="10" fill="white"/>
+  <circle cx="180" cy="452" r="10" fill="white"/>
+  <circle cx="332" cy="452" r="10" fill="white"/>
+
+  <!-- Center hexagon shape - white outline -->
+  <polygon points="256,135 345,188 345,294 256,347 167,294 167,188" fill="none" stroke="white" stroke-width="6" opacity="0.95"/>
+
+  <!-- Inner hexagon fill -->
+  <polygon points="256,160 325,200 325,280 256,320 187,280 187,200" fill="white" opacity="0.12"/>
+
+  <!-- Inner connections to center - white -->
+  <line x1="195" y1="180" x2="230" y2="205" stroke="white" stroke-width="4" opacity="0.7"/>
+  <line x1="317" y1="180" x2="282" y2="205" stroke="white" stroke-width="4" opacity="0.7"/>
+  <line x1="195" y1="332" x2="230" y2="307" stroke="white" stroke-width="4" opacity="0.7"/>
+  <line x1="317" y1="332" x2="282" y2="307" stroke="white" stroke-width="4" opacity="0.7"/>
+
+  <!-- Center AI text -->
+  <text x="256" y="268" font-family="Arial, Helvetica, sans-serif" font-size="56" font-weight="900" fill="white" text-anchor="middle" opacity="0.95">AI</text>
+
+  <!-- Subtle pulse rings -->
+  <circle cx="256" cy="256" r="70" fill="none" stroke="white" stroke-width="2" opacity="0.2"/>
+  <circle cx="256" cy="256" r="100" fill="none" stroke="white" stroke-width="1.5" opacity="0.1"/>
+</svg>

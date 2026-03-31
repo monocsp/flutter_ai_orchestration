@@ -276,9 +276,10 @@ class _StageCardState extends ConsumerState<StageCard> {
                   child: Icon(Icons.help_outline_rounded, size: 14, color: Colors.grey.shade400),
                 ),
                 const Spacer(),
-                SizedBox(
-                  width: 200,
-                  child: DropdownButtonFormField<TemplatePreset>(
+                Flexible(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 200),
+                    child: DropdownButtonFormField<TemplatePreset>(
                     initialValue: stage.templatePreset,
                     isExpanded: true,
                     style: const TextStyle(fontSize: 12, color: Color(0xFF0F172A)),
@@ -313,6 +314,7 @@ class _StageCardState extends ConsumerState<StageCard> {
                       );
                       _loadTemplate();
                     },
+                  ),
                   ),
                 ),
               ],
