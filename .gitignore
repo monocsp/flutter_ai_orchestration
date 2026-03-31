@@ -18,4 +18,5 @@ package-lock.json
 # Build artifacts
 dist/
 installer_output/
+releases/
 AI_Orchestration_Windows.zip
