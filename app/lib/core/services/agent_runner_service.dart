@@ -30,7 +30,6 @@ class AgentRunnerService {
     String? workingDir,
     Duration timeout = const Duration(minutes: 20),
   }) async {
-    final shell = Platform.environment['SHELL'] ?? '/bin/zsh';
     final loginPath = await AgentDetectionService.getLoginShellPath();
 
     // 래핑 프롬프트 주입
@@ -43,14 +42,27 @@ class AgentRunnerService {
 
     try {
       final cmd = _buildCommand(agentId, promptFile.path);
-      // PATH를 셸 명령 안에서 export (environment 덮어쓰기 방지)
-      final wrappedCmd = 'export PATH="$loginPath:\$PATH"; $cmd';
 
-      final result = await Process.run(
-        shell,
-        ['-c', wrappedCmd],
-        workingDirectory: workingDir,
-      ).timeout(timeout);
+      late ProcessResult result;
+
+      if (Platform.isWindows) {
+        // Windows: cmd.exe로 실행, PATH를 set으로 주입
+        final wrappedCmd = 'set "PATH=$loginPath" && $cmd';
+        result = await Process.run(
+          'cmd.exe',
+          ['/c', wrappedCmd],
+          workingDirectory: workingDir,
+        ).timeout(timeout);
+      } else {
+        // macOS/Linux: 셸에서 export PATH로 주입
+        final shell = Platform.environment['SHELL'] ?? '/bin/zsh';
+        final wrappedCmd = 'export PATH="$loginPath:\$PATH"; $cmd';
+        result = await Process.run(
+          shell,
+          ['-c', wrappedCmd],
+          workingDirectory: workingDir,
+        ).timeout(timeout);
+      }
 
       final stdout = (result.stdout as String).trim();
       final stderr = (result.stderr as String).trim();
@@ -143,6 +155,29 @@ class AgentRunnerService {
 
   /// 각 CLI에 맞는 비대화형 실행 명령 생성
   String _buildCommand(String agentId, String promptFilePath) {
+    if (Platform.isWindows) {
+      return _buildWindowsCommand(agentId, promptFilePath);
+    }
+    return _buildUnixCommand(agentId, promptFilePath);
+  }
+
+  /// Windows용 명령 생성: type으로 파일 읽기, cmd.exe 호환
+  String _buildWindowsCommand(String agentId, String promptFilePath) {
+    final escaped = promptFilePath.replaceAll('/', '\\');
+    switch (agentId) {
+      case 'claude':
+        return 'type "$escaped" | claude -p --dangerously-skip-permissions';
+      case 'codex':
+        return 'codex exec "type $escaped"';
+      case 'gemini':
+        return 'gemini -p "type $escaped"';
+      default:
+        return 'type "$escaped" | $agentId';
+    }
+  }
+
+  /// macOS/Linux용 명령 생성: cat으로 파일 읽기
+  String _buildUnixCommand(String agentId, String promptFilePath) {
     switch (agentId) {
       case 'claude':
         return 'cat \'$promptFilePath\' | claude -p --dangerously-skip-permissions';

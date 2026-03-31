@@ -9,15 +9,43 @@ class AgentDetectionService {
   static Future<String> getLoginShellPath() async {
     if (_cachedPath != null) return _cachedPath!;
 
+    if (Platform.isWindows) {
+      return _getWindowsPath();
+    }
+    return _getMacLinuxPath();
+  }
+
+  /// Windows: 시스템 PATH를 그대로 사용 + npm/nodejs 일반 경로 보강
+  static Future<String> _getWindowsPath() async {
+    final currentPath = Platform.environment['PATH'] ?? '';
+    final userProfile = Platform.environment['USERPROFILE'] ?? '';
+    final appData = Platform.environment['APPDATA'] ?? '';
+    final localAppData = Platform.environment['LOCALAPPDATA'] ?? '';
+    final programFiles = Platform.environment['ProgramFiles'] ?? r'C:\Program Files';
+
+    final extraPaths = [
+      if (appData.isNotEmpty) '$appData\\npm',
+      if (localAppData.isNotEmpty) '$localAppData\\Programs\\Python\\Python311',
+      if (localAppData.isNotEmpty) '$localAppData\\Programs\\Python\\Python312',
+      '$programFiles\\nodejs',
+      '$programFiles\\Git\\cmd',
+      if (userProfile.isNotEmpty) '$userProfile\\.pub-cache\\bin',
+    ];
+
+    _cachedPath = [...extraPaths, currentPath].join(';');
+    return _cachedPath!;
+  }
+
+  /// macOS/Linux: 로그인 셸에서 PATH를 가져옴
+  static Future<String> _getMacLinuxPath() async {
     final shell = Platform.environment['SHELL'] ?? '/bin/zsh';
     final home = Platform.environment['HOME'] ?? '';
 
     try {
-      // 기존 환경을 유지한 채 로그인 셸에서 PATH만 가져옴
       final result = await Process.run(
         shell,
         ['-l', '-i', '-c', 'echo \$PATH'],
-        environment: null, // 시스템 환경 그대로 상속
+        environment: null,
       ).timeout(const Duration(seconds: 10));
 
       if (result.exitCode == 0) {
@@ -61,12 +89,87 @@ class AgentDetectionService {
   }
 
   Future<AgentInstallStatus> _detect(AgentProvider agent) async {
+    if (Platform.isWindows) {
+      return _detectWindows(agent);
+    }
+    return _detectMacLinux(agent);
+  }
+
+  /// Windows: where.exe로 실행 파일 검색
+  Future<AgentInstallStatus> _detectWindows(AgentProvider agent) async {
+    final loginPath = await getLoginShellPath();
+
+    for (final exe in agent.executableNames) {
+      try {
+        // 1) where.exe로 경로 확인
+        final whereResult = await Process.run(
+          'cmd.exe',
+          ['/c', 'set "PATH=$loginPath" && where $exe'],
+        ).timeout(const Duration(seconds: 10));
+        if (whereResult.exitCode != 0) continue;
+
+        final path = (whereResult.stdout as String).trim().split('\n').first.trim();
+        if (path.isEmpty) continue;
+
+        // 2) --version 실행
+        String? version;
+        bool canExecute = false;
+        try {
+          final process = await Process.start(
+            'cmd.exe',
+            ['/c', 'set "PATH=$loginPath" && $exe --version'],
+          );
+          process.stdin.writeln('n');
+          await process.stdin.close();
+
+          final vResult = await process.exitCode
+              .timeout(const Duration(seconds: 8));
+          final stdout =
+              await process.stdout.transform(const SystemEncoding().decoder).join();
+          final stderr =
+              await process.stderr.transform(const SystemEncoding().decoder).join();
+
+          final allOutput = '$stdout\n$stderr'.toLowerCase();
+
+          if (allOutput.contains('is not recognized') ||
+              allOutput.contains('could not be found') ||
+              allOutput.contains('not installed') ||
+              allOutput.contains('install github copilot cli')) {
+            canExecute = false;
+          } else if (vResult == 0 && stdout.trim().isNotEmpty) {
+            canExecute = true;
+            version = stdout.trim().split('\n').first;
+          }
+        } catch (_) {
+          canExecute = false;
+        }
+
+        return AgentInstallStatus(
+          agentId: agent.id,
+          displayName: agent.displayName,
+          installed: canExecute,
+          executable: canExecute,
+          detectedPath: path,
+          version: version,
+        );
+      } catch (_) {
+        continue;
+      }
+    }
+    return AgentInstallStatus(
+      agentId: agent.id,
+      displayName: agent.displayName,
+    );
+  }
+
+  /// macOS/Linux: which로 실행 파일 검색
+  Future<AgentInstallStatus> _detectMacLinux(AgentProvider agent) async {
     final loginPath = await getLoginShellPath();
     final shell = Platform.environment['SHELL'] ?? '/bin/zsh';
 
     for (final exe in agent.executableNames) {
       try {
-        // 1) which로 경로 확인 — PATH를 export한 뒤 which 실행
+        // 1) which로 경로 확인
         final whichResult = await Process.run(
           shell,
           ['-c', 'export PATH="$loginPath:\$PATH"; which $exe'],
