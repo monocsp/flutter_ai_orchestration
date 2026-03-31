@@ -143,6 +143,114 @@ class ThreadListNotifier extends Notifier<ThreadListState> {
     state = state.copyWith(comparisons: comparisons);
   }
 
+  /// 실패한 단계부터 재시도하여 이어서 실행
+  Future<void> retryFromStage(String threadId, int stageIndex) async {
+    state = state.copyWith(isStopped: false);
+
+    final session = ref.read(sessionProvider);
+    final currentThread = _getThread(threadId);
+    if (currentThread == null) return;
+
+    // 스레드를 다시 inProgress로
+    _updateThreadStatus(threadId, ThreadStatus.inProgress);
+
+    final enabledStages = session.stages.where((s) => s.enabled).toList();
+    final runner = AgentRunnerService();
+    _activeRunner = runner;
+
+    final stageStartIndex = 2; // index 0 = agent check, 1 = settings
+
+    for (var i = stageIndex; i < currentThread.stages.length; i++) {
+      if (state.isStopped) break;
+
+      final stage = _getThread(threadId)!.stages[i];
+      final artifactIdx = i - stageStartIndex;
+      if (artifactIdx < 0 || artifactIdx >= enabledStages.length) continue;
+
+      debugPrint('[ORCH:RETRY] Starting stage $i: ${stage.name}');
+
+      String? promptContent;
+      if (stage.promptPath != null) {
+        try {
+          promptContent = await File(stage.promptPath!).readAsString();
+        } catch (e) {
+          await ErrorLogService.log(
+            stage: stage.name,
+            error: '프롬프트 파일 읽기 실패: $e\npath: ${stage.promptPath}',
+          );
+        }
+      }
+
+      final originalStage = enabledStages[artifactIdx];
+      final agentId = originalStage.role == StageRole.analysis
+          ? session.analysisAgent.id
+          : session.criticAgent.id;
+      final agentDisplayName = originalStage.role == StageRole.analysis
+          ? session.analysisAgent.displayName
+          : session.criticAgent.displayName;
+
+      _updateStage(threadId, i, (s) => s.copyWith(
+        status: ThreadStatus.inProgress,
+        agentName: agentDisplayName,
+        promptContent: promptContent,
+        resultContent: null,
+        startedAt: DateTime.now(),
+      ));
+
+      if (state.isStopped) break;
+
+      final result = await runner.run(
+        agentId: agentId,
+        promptContent: promptContent ?? '',
+        workingDir: session.projectRootPath,
+      );
+
+      if (state.isStopped) break;
+
+      if (result.success) {
+        final parsed = AgentRunnerService.parseMemo(result.output);
+
+        if (stage.resultPath != null) {
+          await File(stage.resultPath!).writeAsString(parsed.mainContent);
+        }
+
+        _updateStage(threadId, i, (s) => s.copyWith(
+          status: ThreadStatus.completed,
+          resultContent: parsed.memo != null
+              ? '${parsed.memo}\n\n---\n\n${parsed.mainContent}'
+              : parsed.mainContent,
+          completedAt: DateTime.now(),
+        ));
+      } else {
+        final errorMsg = '## 실행 실패\n\n'
+            '- Exit code: ${result.exitCode}\n'
+            '- 오류: ${result.error}\n\n'
+            '### 출력\n```\n${result.output}\n```';
+
+        await ErrorLogService.log(
+          stage: stage.name,
+          error: result.error ?? '알 수 없는 오류',
+          stdout: result.output,
+          command: result.command,
+          exitCode: result.exitCode,
+        );
+
+        _updateStage(threadId, i, (s) => s.copyWith(
+          status: ThreadStatus.failed,
+          resultContent: errorMsg,
+          completedAt: DateTime.now(),
+        ));
+        // 실패하면 여기서 멈춤 (사용자가 재시도 가능)
+        return;
+      }
+    }
+
+    // 모든 단계 완료
+    if (!state.isStopped) {
+      _updateThreadStatus(threadId, ThreadStatus.completed);
+    }
+  }
+
   /// 전체 오케스트레이션 자동 실행
   Future<void> startOrchestration({String? customTitle}) async {
     state = state.copyWith(isStopped: false);
