@@ -98,13 +98,16 @@ class AgentDetectionService {
   /// Windows: where.exe로 실행 파일 검색
   Future<AgentInstallStatus> _detectWindows(AgentProvider agent) async {
     final loginPath = await getLoginShellPath();
+    final env = Map<String, String>.from(Platform.environment);
+    env['PATH'] = loginPath;
 
     for (final exe in agent.executableNames) {
       try {
         // 1) where.exe로 경로 확인
         final whereResult = await Process.run(
           'cmd.exe',
-          ['/c', 'set "PATH=$loginPath" && where $exe'],
+          ['/c', 'where $exe'],
+          environment: env,
         ).timeout(const Duration(seconds: 10));
         if (whereResult.exitCode != 0) continue;
 
@@ -117,7 +120,8 @@ class AgentDetectionService {
         try {
           final process = await Process.start(
             'cmd.exe',
-            ['/c', 'set "PATH=$loginPath" && $exe --version'],
+            ['/c', '$exe --version'],
+            environment: env,
           );
           process.stdin.writeln('n');
           await process.stdin.close();
