@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import '../core/models/agent_provider.dart';
@@ -8,6 +9,7 @@ import '../core/models/orchestration_stage.dart';
 import '../core/models/session_config.dart';
 import '../core/models/parallel_comparison.dart';
 import '../core/services/agent_detection_service.dart';
+import '../core/services/session_builder_service.dart';
 import '../core/services/agent_runner_service.dart';
 import '../core/services/error_log_service.dart';
 import 'session_providers.dart';
@@ -68,12 +70,21 @@ class ThreadListState {
 }
 
 class ThreadListNotifier extends Notifier<ThreadListState> {
+  /// 현재 실행 중인 AgentRunnerService (중단 시 프로세스 kill 용도)
+  AgentRunnerService? _activeRunner;
+
   @override
   ThreadListState build() => const ThreadListState();
 
-  /// 오케스트레이션 중단
+  /// 오케스트레이션/병렬 비교 중단
   void stopOrchestration() {
     state = state.copyWith(isStopped: true);
+
+    // 실행 중인 CLI 프로세스 강제 종료
+    _activeRunner?.killAll();
+
+    // 진행 중인 병렬 비교의 실행 중 단계를 실패로
+    _stopInProgressComparisons();
 
     // 진행 중인 스레드의 현재 단계를 실패로
     final thread = state.selectedThread;
@@ -101,6 +112,35 @@ class ThreadListNotifier extends Notifier<ThreadListState> {
     final threads = List<OrchestrationThread>.from(state.threads);
     threads[threadIdx] = updatedThread;
     state = state.copyWith(threads: threads);
+  }
+
+  /// 진행 중인 병렬 비교의 실행 중 run들을 실패로 표시
+  void _stopInProgressComparisons() {
+    final comparisons = List<ParallelComparison>.from(state.comparisons);
+    for (var ci = 0; ci < comparisons.length; ci++) {
+      final comp = comparisons[ci];
+      if (comp.status != ThreadStatus.inProgress) continue;
+
+      final runs = List<ParallelRun>.from(comp.runs);
+      bool changed = false;
+      for (var ri = 0; ri < runs.length; ri++) {
+        if (runs[ri].status == ThreadStatus.inProgress) {
+          runs[ri] = runs[ri].copyWith(
+            status: ThreadStatus.failed,
+            resultContent: '> 사용자에 의해 중단되었습니다.',
+            completedAt: DateTime.now(),
+          );
+          changed = true;
+        }
+      }
+      if (changed) {
+        comparisons[ci] = comp.copyWith(
+          runs: runs,
+          status: ThreadStatus.failed,
+        );
+      }
+    }
+    state = state.copyWith(comparisons: comparisons);
   }
 
   /// 전체 오케스트레이션 자동 실행
@@ -259,6 +299,7 @@ class ThreadListNotifier extends Notifier<ThreadListState> {
       );
 
       final runner = AgentRunnerService();
+      _activeRunner = runner;
       final autoResult = await runner.run(
         agentId: session.analysisAgent.id,
         promptContent: autoPrompt,
@@ -329,8 +370,28 @@ class ThreadListNotifier extends Notifier<ThreadListState> {
     if (state.isStopped) return;
 
     // 세션 파일 생성 (설정이 확정된 후)
-    final artifact = await sessionNotifier.generateSession();
-    if (artifact == null) return;
+    debugPrint('[ORCH] Settings done. Generating session files...');
+    SessionArtifact? artifact;
+    try {
+      artifact = await sessionNotifier.generateSession();
+    } catch (e, stack) {
+      debugPrint('[ORCH] generateSession FAILED: $e');
+      debugPrint('[ORCH] stack: $stack');
+      await ErrorLogService.log(
+        stage: '세션 파일 생성',
+        error: 'generateSession 실패: $e\n$stack',
+      );
+    }
+    if (artifact == null) {
+      debugPrint('[ORCH] artifact is null, aborting orchestration');
+      await ErrorLogService.log(
+        stage: '세션 파일 생성',
+        error: 'artifact가 null입니다. 세션 파일 생성에 실패했습니다.',
+      );
+      _updateThreadStatus(tempId, ThreadStatus.failed);
+      return;
+    }
+    debugPrint('[ORCH] Session generated: ${artifact.sessionDirPath}');
 
     // 단계에 경로 할당
     _assignArtifactPaths(tempId, artifact);
@@ -354,6 +415,7 @@ class ThreadListNotifier extends Notifier<ThreadListState> {
 
     // 자동 실행 루프
     final runner = AgentRunnerService();
+    _activeRunner = runner;
 
     // index 0 = agent check, index 1 = settings, index 2~ = 실제 단계
     final stageStartIndex = 2;
@@ -365,12 +427,33 @@ class ThreadListNotifier extends Notifier<ThreadListState> {
       final stage = currentThread.stages[i];
       final artifactIdx = i - stageStartIndex;
 
+      debugPrint('[ORCH] Starting stage $i: ${stage.name}');
+      debugPrint('[ORCH]   promptPath: ${stage.promptPath}');
+      debugPrint('[ORCH]   resultPath: ${stage.resultPath}');
+
       // 이 단계를 진행 중으로
       String? promptContent;
       if (stage.promptPath != null) {
         try {
-          promptContent = await File(stage.promptPath!).readAsString();
-        } catch (_) {}
+          final promptFile = File(stage.promptPath!);
+          final exists = await promptFile.exists();
+          debugPrint('[ORCH]   promptFile exists: $exists');
+          if (exists) {
+            promptContent = await promptFile.readAsString();
+            debugPrint('[ORCH]   promptContent length: ${promptContent.length}');
+          } else {
+            await ErrorLogService.log(
+              stage: stage.name,
+              error: '프롬프트 파일이 존재하지 않습니다: ${stage.promptPath}',
+            );
+          }
+        } catch (e) {
+          debugPrint('[ORCH]   promptFile read error: $e');
+          await ErrorLogService.log(
+            stage: stage.name,
+            error: '프롬프트 파일 읽기 실패: $e\npath: ${stage.promptPath}',
+          );
+        }
       }
 
       _updateStage(tempId, i, (s) => s.copyWith(
@@ -527,6 +610,7 @@ class ThreadListNotifier extends Notifier<ThreadListState> {
 
     // 병렬 실행
     final runner = AgentRunnerService();
+    _activeRunner = runner;
     final futures = <Future<void>>[];
 
     for (var i = 0; i < agentIds.length; i++) {

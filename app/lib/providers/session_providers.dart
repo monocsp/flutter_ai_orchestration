@@ -17,6 +17,19 @@ String _resolveAppDir() {
   return p.dirname(exePath);
 }
 
+/// 사용자 데이터를 저장할 디렉토리 (output, logs 등)
+/// Program Files는 쓰기 권한이 없으므로 사용자 문서 폴더 사용
+String _resolveDataDir() {
+  if (Platform.isWindows) {
+    final userProfile = Platform.environment['USERPROFILE'] ?? '';
+    if (userProfile.isNotEmpty) {
+      return p.join(userProfile, 'Documents', 'AI Orchestration');
+    }
+  }
+  // macOS/Linux 또는 폴백: exe와 같은 디렉토리
+  return _resolveAppDir();
+}
+
 // Handoff kit path detection
 final handoffKitPathProvider = Provider<String>((ref) {
   final appDir = _resolveAppDir();
@@ -95,7 +108,7 @@ class SessionState {
     this.lastArtifact,
     this.isGenerating = false,
   })  : outputRootPath =
-            outputRootPath ?? p.join(_resolveAppDir(), 'output'),
+            outputRootPath ?? p.join(_resolveDataDir(), 'output'),
         analysisAgent = analysisAgent ?? AgentProvider.builtIn[1],
         criticAgent = criticAgent ?? AgentProvider.builtIn[0],
         preset = preset ?? OrchestrationPreset.defaults[1],  // 5단계 기본
