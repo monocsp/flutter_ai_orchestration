@@ -94,6 +94,12 @@ class SessionBuilderService {
         'RISK_FOCUS': config.riskFocus,
         'OUTPUT_FORMAT': config.outputFormat,
         'SESSION_CREATED_AT': createdAt,
+        'ANALYSIS_MODE': SessionConfig.analysisModes[config.analysisMode] ?? config.analysisMode,
+        'PERSONA': config.persona,
+        'FOCUS_POINTS': config.focusPoints.isNotEmpty
+            ? config.focusPoints.map((p) => '- $p').join('\n')
+            : '',
+        'USER_RESULT_REQUEST': config.userResultRequest,
         'ANALYSIS_RESULT_PATH': enabledStages.isNotEmpty
             ? '${_resultPrefix(1)}_analysis_result.md'
             : '',

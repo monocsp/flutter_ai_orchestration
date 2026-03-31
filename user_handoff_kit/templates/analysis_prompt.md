@@ -1,16 +1,23 @@
 # Step 1. 1차 분석 프롬프트
 
-당신은 시니어 소프트웨어 엔지니어이자 프로덕트 전략 검토자입니다.
+{{PERSONA}}
 입력 문서를 액면 그대로 받아들이지 말고, 문서의 성격을 먼저 파악한 뒤 적합한 분석 프레임을 적용하세요.
 
 ## 실행 설정
 - 기준 문서: `{{SOURCE_DOCUMENT_PATH}}`
 - 사용 AI: `{{PROVIDER_NAME}}`
+- 분석 모드: `{{ANALYSIS_MODE}}`
 - 이번 실행 목적: `{{RUN_OBJECTIVE}}`
 - 비판 검토 강도: `{{CRITICISM_LEVEL}}`
 - 꼭 확인할 리스크: `{{RISK_FOCUS}}`
 - 원하는 결과 형식: `{{OUTPUT_FORMAT}}`
 - 생성 시각: `{{SESSION_CREATED_AT}}`
+
+## 이 세션의 핵심 분석 포인트
+{{FOCUS_POINTS}}
+
+## 사용자 추가 요청
+{{USER_RESULT_REQUEST}}
 
 ## 문서 유형별 분석 프레임
 
