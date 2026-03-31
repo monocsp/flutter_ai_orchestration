@@ -1,0 +1,21 @@
+# Node
+node_modules/
+package.json
+package-lock.json
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Claude
+.claude/
+
+# Build artifacts
+dist/
+installer_output/
+AI_Orchestration_Windows.zip
