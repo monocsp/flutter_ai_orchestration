@@ -44,7 +44,7 @@ class AgentRunnerService {
     required String agentId,
     required String promptContent,
     String? workingDir,
-    Duration timeout = const Duration(minutes: 20),
+    Duration timeout = const Duration(minutes: 40),
   }) async {
     final loginPath = await AgentDetectionService.getLoginShellPath();
 

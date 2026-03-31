@@ -456,19 +456,23 @@ class ThreadListNotifier extends Notifier<ThreadListState> {
         }
       }
 
-      _updateStage(tempId, i, (s) => s.copyWith(
-        status: ThreadStatus.inProgress,
-        promptContent: promptContent,
-        startedAt: DateTime.now(),
-      ));
-
-      if (state.isStopped) break;
-
       // AI 담당 agent 결정
       final originalStage = enabledStages[artifactIdx];
       final agentId = originalStage.role == StageRole.analysis
           ? session.analysisAgent.id
           : session.criticAgent.id;
+      final agentDisplayName = originalStage.role == StageRole.analysis
+          ? session.analysisAgent.displayName
+          : session.criticAgent.displayName;
+
+      _updateStage(tempId, i, (s) => s.copyWith(
+        status: ThreadStatus.inProgress,
+        agentName: agentDisplayName,
+        promptContent: promptContent,
+        startedAt: DateTime.now(),
+      ));
+
+      if (state.isStopped) break;
 
       // AI CLI 실행
       final result = await runner.run(
