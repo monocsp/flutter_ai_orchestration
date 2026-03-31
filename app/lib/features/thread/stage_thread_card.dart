@@ -178,7 +178,9 @@ class _StageThreadCardState extends State<StageThreadCard> {
                     ),
                     const SizedBox(width: 10),
                     Text(
-                      'AI가 분석 중입니다...',
+                      widget.stage.agentName != null
+                          ? '${widget.stage.agentName} 결과를 기다리고 있습니다...'
+                          : 'AI가 분석 중입니다...',
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
