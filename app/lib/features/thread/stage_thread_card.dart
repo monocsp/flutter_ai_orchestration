@@ -8,12 +8,14 @@ class StageThreadCard extends StatefulWidget {
   final StageThread stage;
   final int index;
   final bool isLast;
+  final VoidCallback? onRetry;
 
   const StageThreadCard({
     super.key,
     required this.stage,
     required this.index,
     this.isLast = false,
+    this.onRetry,
   });
 
   @override
@@ -304,27 +306,39 @@ class _StageThreadCardState extends State<StageThreadCard> {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton.icon(
-                        onPressed: () {
-                          Clipboard.setData(
-                              ClipboardData(text: stage.resultContent!));
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('에러 내용이 클립보드에 복사되었습니다'),
-                              duration: Duration(seconds: 1),
-                              behavior: SnackBarBehavior.floating,
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        if (widget.onRetry != null)
+                          TextButton.icon(
+                            onPressed: widget.onRetry,
+                            icon: const Icon(Icons.refresh, size: 14),
+                            label: const Text('재시도'),
+                            style: TextButton.styleFrom(
+                              foregroundColor: const Color(0xFF2563EB),
+                              textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
                             ),
-                          );
-                        },
-                        icon: const Icon(Icons.copy, size: 14),
-                        label: const Text('에러 복사'),
-                        style: TextButton.styleFrom(
-                          foregroundColor: const Color(0xFFDC2626),
-                          textStyle: const TextStyle(fontSize: 11),
+                          ),
+                        TextButton.icon(
+                          onPressed: () {
+                            Clipboard.setData(
+                                ClipboardData(text: stage.resultContent!));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('에러 내용이 클립보드에 복사되었습니다'),
+                                duration: Duration(seconds: 1),
+                                behavior: SnackBarBehavior.floating,
+                              ),
+                            );
+                          },
+                          icon: const Icon(Icons.copy, size: 14),
+                          label: const Text('에러 복사'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: const Color(0xFFDC2626),
+                            textStyle: const TextStyle(fontSize: 11),
+                          ),
                         ),
-                      ),
+                      ],
                     ),
                   ],
                 ),
