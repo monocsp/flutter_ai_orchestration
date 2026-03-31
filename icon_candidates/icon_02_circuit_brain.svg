@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1E1B4B"/>
+      <stop offset="100%" style="stop-color:#312E81"/>
+    </linearGradient>
+  </defs>
+  <!-- Background -->
+  <rect width="512" height="512" rx="100" fill="url(#bg2)"/>
+
+  <!-- Circuit board traces -->
+  <!-- Horizontal lines -->
+  <line x1="80" y1="180" x2="200" y2="180" stroke="#6366F1" stroke-width="3" opacity="0.4"/>
+  <line x1="312" y1="180" x2="432" y2="180" stroke="#6366F1" stroke-width="3" opacity="0.4"/>
+  <line x1="80" y1="332" x2="200" y2="332" stroke="#6366F1" stroke-width="3" opacity="0.4"/>
+  <line x1="312" y1="332" x2="432" y2="332" stroke="#6366F1" stroke-width="3" opacity="0.4"/>
+
+  <!-- Vertical lines -->
+  <line x1="180" y1="80" x2="180" y2="200" stroke="#6366F1" stroke-width="3" opacity="0.4"/>
+  <line x1="332" y1="80" x2="332" y2="200" stroke="#6366F1" stroke-width="3" opacity="0.4"/>
+  <line x1="180" y1="312" x2="180" y2="432" stroke="#6366F1" stroke-width="3" opacity="0.4"/>
+  <line x1="332" y1="312" x2="332" y2="432" stroke="#6366F1" stroke-width="3" opacity="0.4"/>
+
+  <!-- Circuit dots -->
+  <circle cx="80" cy="180" r="6" fill="#818CF8"/>
+  <circle cx="432" cy="180" r="6" fill="#818CF8"/>
+  <circle cx="80" cy="332" r="6" fill="#818CF8"/>
+  <circle cx="432" cy="332" r="6" fill="#818CF8"/>
+  <circle cx="180" cy="80" r="6" fill="#818CF8"/>
+  <circle cx="332" cy="80" r="6" fill="#818CF8"/>
+  <circle cx="180" cy="432" r="6" fill="#818CF8"/>
+  <circle cx="332" cy="432" r="6" fill="#818CF8"/>
+
+  <!-- Center hexagon shape -->
+  <polygon points="256,140 340,190 340,290 256,340 172,290 172,190" fill="none" stroke="#A78BFA" stroke-width="4" opacity="0.7"/>
+  <polygon points="256,165 320,200 320,280 256,315 192,280 192,200" fill="#6366F1" opacity="0.3"/>
+
+  <!-- Inner connections to center -->
+  <line x1="200" y1="180" x2="256" y2="210" stroke="#A78BFA" stroke-width="2.5" opacity="0.6"/>
+  <line x1="312" y1="180" x2="256" y2="210" stroke="#A78BFA" stroke-width="2.5" opacity="0.6"/>
+  <line x1="200" y1="332" x2="256" y2="300" stroke="#A78BFA" stroke-width="2.5" opacity="0.6"/>
+  <line x1="312" y1="332" x2="256" y2="300" stroke="#A78BFA" stroke-width="2.5" opacity="0.6"/>
+
+  <!-- Center play/orchestrate symbol -->
+  <polygon points="238,220 238,292 290,256" fill="white" opacity="0.9"/>
+
+  <!-- Glowing pulse rings -->
+  <circle cx="256" cy="256" r="60" fill="none" stroke="#C4B5FD" stroke-width="1.5" opacity="0.3"/>
+  <circle cx="256" cy="256" r="90" fill="none" stroke="#C4B5FD" stroke-width="1" opacity="0.15"/>
+</svg>
