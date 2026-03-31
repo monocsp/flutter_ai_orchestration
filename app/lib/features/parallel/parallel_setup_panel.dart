@@ -5,6 +5,7 @@ import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
 import '../../core/models/agent_provider.dart';
 import '../../providers/agent_providers.dart';
+import '../../providers/parallel_setup_providers.dart';
 import '../../providers/thread_providers.dart';
 import '../workbench/workbench_screen.dart';
 
@@ -18,19 +19,37 @@ class ParallelSetupPanel extends ConsumerStatefulWidget {
 class _ParallelSetupPanelState extends ConsumerState<ParallelSetupPanel> {
   final _titleController = TextEditingController();
   final _promptController = TextEditingController();
-  String? _sourceDocPath;
-  String? _sourceDocContent;
-  final Set<String> _selectedAgentIds = {};
-  bool _isStarting = false;
+  bool _syncingFromProvider = false;
 
   @override
   void initState() {
     super.initState();
-    _promptController.text = _defaultPrompt;
+    // Provider에서 초기값 복원
+    final state = ref.read(parallelSetupProvider);
+    _titleController.text = state.title;
+    _promptController.text = state.prompt;
+
+    // 텍스트 변경 시 Provider에 반영
+    _titleController.addListener(_onTitleChanged);
+    _promptController.addListener(_onPromptChanged);
+  }
+
+  void _onTitleChanged() {
+    if (!_syncingFromProvider) {
+      ref.read(parallelSetupProvider.notifier).setTitle(_titleController.text);
+    }
+  }
+
+  void _onPromptChanged() {
+    if (!_syncingFromProvider) {
+      ref.read(parallelSetupProvider.notifier).setPrompt(_promptController.text);
+    }
   }
 
   @override
   void dispose() {
+    _titleController.removeListener(_onTitleChanged);
+    _promptController.removeListener(_onPromptChanged);
     _titleController.dispose();
     _promptController.dispose();
     super.dispose();
@@ -38,13 +57,21 @@ class _ParallelSetupPanelState extends ConsumerState<ParallelSetupPanel> {
 
   @override
   Widget build(BuildContext context) {
+    final setup = ref.watch(parallelSetupProvider);
     final agentStatus = ref.watch(agentStatusProvider);
+
+    // Provider 값이 외부에서 변경된 경우 (clearAfterStart 등) 컨트롤러 동기화
+    if (_titleController.text != setup.title) {
+      _syncingFromProvider = true;
+      _titleController.text = setup.title;
+      _syncingFromProvider = false;
+    }
 
     return DropTarget(
       onDragDone: (details) {
         for (final file in details.files) {
           if (file.path.isNotEmpty) {
-            _loadSourceDoc(file.path);
+            ref.read(parallelSetupProvider.notifier).setSourceDocument(file.path);
             break;
           }
         }
@@ -68,7 +95,7 @@ class _ParallelSetupPanelState extends ConsumerState<ParallelSetupPanel> {
           // Source document
           _sectionTitle(context, '계획서'),
           const SizedBox(height: 8),
-          _buildDocArea(context),
+          _buildDocArea(context, setup.sourceDocPath),
           const SizedBox(height: 16),
 
           // Prompt
@@ -106,7 +133,7 @@ class _ParallelSetupPanelState extends ConsumerState<ParallelSetupPanel> {
             data: (statuses) => Column(
               children: statuses
                   .where((s) => s.agentId != 'other')
-                  .map((status) => _agentCheckbox(status))
+                  .map((status) => _agentCheckbox(status, setup.selectedAgentIds))
                   .toList(),
             ),
             loading: () => const Padding(
@@ -128,12 +155,12 @@ class _ParallelSetupPanelState extends ConsumerState<ParallelSetupPanel> {
             width: double.infinity,
             height: 44,
             child: ElevatedButton.icon(
-              onPressed: _sourceDocPath == null ||
-                      _selectedAgentIds.isEmpty ||
-                      _isStarting
+              onPressed: setup.sourceDocPath == null ||
+                      setup.selectedAgentIds.isEmpty ||
+                      setup.isStarting
                   ? null
                   : _startParallel,
-              icon: _isStarting
+              icon: setup.isStarting
                   ? const SizedBox(
                       width: 18,
                       height: 18,
@@ -141,9 +168,9 @@ class _ParallelSetupPanelState extends ConsumerState<ParallelSetupPanel> {
                           strokeWidth: 2, color: Colors.white),
                     )
                   : const Icon(Icons.compare_arrows, size: 20),
-              label: Text(_isStarting
+              label: Text(setup.isStarting
                   ? '시작 중...'
-                  : '병렬 실행 시작 (${_selectedAgentIds.length}개 Agent)'),
+                  : '병렬 실행 시작 (${setup.selectedAgentIds.length}개 Agent)'),
             ),
           ),
           const SizedBox(height: 16),
@@ -152,7 +179,7 @@ class _ParallelSetupPanelState extends ConsumerState<ParallelSetupPanel> {
     );
   }
 
-  Widget _buildDocArea(BuildContext context) {
+  Widget _buildDocArea(BuildContext context, String? sourceDocPath) {
     return InkWell(
       onTap: _pickDocument,
       borderRadius: BorderRadius.circular(12),
@@ -164,7 +191,7 @@ class _ParallelSetupPanelState extends ConsumerState<ParallelSetupPanel> {
           border: Border.all(color: const Color(0xFFE2E8F0)),
         ),
         child: Center(
-          child: _sourceDocPath != null
+          child: sourceDocPath != null
               ? Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -172,7 +199,7 @@ class _ParallelSetupPanelState extends ConsumerState<ParallelSetupPanel> {
                         size: 22, color: Color(0xFF0D9488)),
                     const SizedBox(height: 4),
                     Text(
-                      _sourceDocPath!.split(Platform.pathSeparator).last,
+                      sourceDocPath.split(Platform.pathSeparator).last,
                       style: const TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
@@ -198,9 +225,9 @@ class _ParallelSetupPanelState extends ConsumerState<ParallelSetupPanel> {
     );
   }
 
-  Widget _agentCheckbox(AgentInstallStatus status) {
+  Widget _agentCheckbox(AgentInstallStatus status, Set<String> selectedAgentIds) {
     final isInstalled = status.installed;
-    final isChecked = _selectedAgentIds.contains(status.agentId);
+    final isChecked = selectedAgentIds.contains(status.agentId);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
@@ -214,13 +241,8 @@ class _ParallelSetupPanelState extends ConsumerState<ParallelSetupPanel> {
           value: isChecked,
           onChanged: isInstalled
               ? (v) {
-                  setState(() {
-                    if (v == true) {
-                      _selectedAgentIds.add(status.agentId);
-                    } else {
-                      _selectedAgentIds.remove(status.agentId);
-                    }
-                  });
+                  ref.read(parallelSetupProvider.notifier)
+                      .toggleAgent(status.agentId, v == true);
                 }
               : null,
           activeColor: const Color(0xFF0D9488),
@@ -278,46 +300,36 @@ class _ParallelSetupPanelState extends ConsumerState<ParallelSetupPanel> {
       allowedExtensions: ['md', 'txt'],
     );
     if (result != null && result.files.single.path != null) {
-      _loadSourceDoc(result.files.single.path!);
+      ref.read(parallelSetupProvider.notifier)
+          .setSourceDocument(result.files.single.path!);
     }
   }
 
-  Future<void> _loadSourceDoc(String path) async {
-    try {
-      final content = await File(path).readAsString();
-      setState(() {
-        _sourceDocPath = path;
-        _sourceDocContent = content;
-      });
-    } catch (_) {}
-  }
-
   Future<void> _startParallel() async {
-    setState(() => _isStarting = true);
+    final notifier = ref.read(parallelSetupProvider.notifier);
+    notifier.setIsStarting(true);
     try {
-      final title = _titleController.text;
-      final prompt = _promptController.text;
-
-      final fullPrompt = _sourceDocContent != null
-          ? '# 기준 문서\n\n$_sourceDocContent\n\n---\n\n$prompt'
-          : prompt;
+      final setup = ref.read(parallelSetupProvider);
+      final fullPrompt = setup.sourceDocContent != null
+          ? '# 기준 문서\n\n${setup.sourceDocContent}\n\n---\n\n${setup.prompt}'
+          : setup.prompt;
 
       // 병렬 실행 시작 (백그라운드)
       ref.read(threadListProvider.notifier).startParallelComparison(
-            agentIds: _selectedAgentIds.toList(),
+            agentIds: setup.selectedAgentIds.toList(),
             promptContent: fullPrompt,
-            sourceDocPath: _sourceDocPath,
-            customTitle: title,
+            sourceDocPath: setup.sourceDocPath,
+            customTitle: setup.title,
           );
 
-      _titleController.clear();
+      notifier.clearAfterStart();
 
       // 즉시 비교 결과 뷰로 전환
       ref.read(workbenchViewProvider.notifier).setView(
           WorkbenchView.comparison);
     } finally {
       await Future.delayed(const Duration(seconds: 3));
-      if (mounted) setState(() => _isStarting = false);
+      notifier.setIsStarting(false);
     }
   }
 
@@ -343,20 +355,4 @@ class _ParallelSetupPanelState extends ConsumerState<ParallelSetupPanel> {
       ),
     );
   }
-
-  static const _defaultPrompt = '''당신은 시니어 소프트웨어 엔지니어입니다.
-위의 기준 문서를 분석하고, 아래 항목을 포함한 실행 계획을 작성하세요.
-
-## 필수 출력 항목
-1. 입력 유형 판별 (버그/기능/리팩터링 등)
-2. 우선순위 보드 (표)
-3. 작업 항목별 분석 (관련 파일, 접근 방식, 리스크)
-4. 검증 계획
-5. 다음 작업자가 첫 30분 안에 볼 것
-
-## 규칙
-- 한국어 Markdown으로 작성
-- 코드 미검증 시 명시
-- 사실과 가정을 분리
-''';
 }
