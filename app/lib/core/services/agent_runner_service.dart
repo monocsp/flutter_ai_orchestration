@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'agent_detection_service.dart';
 
@@ -30,7 +32,6 @@ class AgentRunnerService {
     String? workingDir,
     Duration timeout = const Duration(minutes: 20),
   }) async {
-    final shell = Platform.environment['SHELL'] ?? '/bin/zsh';
     final loginPath = await AgentDetectionService.getLoginShellPath();
 
     // 래핑 프롬프트 주입
@@ -43,14 +44,55 @@ class AgentRunnerService {
 
     try {
       final cmd = _buildCommand(agentId, promptFile.path);
-      // PATH를 셸 명령 안에서 export (environment 덮어쓰기 방지)
-      final wrappedCmd = 'export PATH="$loginPath:\$PATH"; $cmd';
 
-      final result = await Process.run(
-        shell,
-        ['-c', wrappedCmd],
-        workingDirectory: workingDir,
-      ).timeout(timeout);
+      late ProcessResult result;
+
+      if (Platform.isWindows) {
+        final env = Map<String, String>.from(Platform.environment);
+        env['PATH'] = loginPath;
+        final cliCmd = _buildWindowsCmd(agentId, promptFile.path);
+        final stopwatch = Stopwatch()..start();
+
+        debugPrint('[RUNNER:$agentId] Process.start: cmd.exe /c $cliCmd');
+        final process = await Process.start(
+          'cmd.exe',
+          ['/c', cliCmd],
+          workingDirectory: workingDir,
+          environment: env,
+        );
+
+        process.stdin.add(utf8.encode(wrappedPrompt));
+        await process.stdin.close();
+        debugPrint('[RUNNER:$agentId] stdin written & closed (${stopwatch.elapsed})');
+
+        // stdout/stderr를 동시에 소비하여 교착(deadlock) 방지
+        final stdoutFuture = process.stdout.transform(utf8.decoder).join();
+        final stderrFuture = process.stderr.transform(utf8.decoder).join();
+        final exitCodeFuture = process.exitCode;
+
+        debugPrint('[RUNNER:$agentId] waiting for streams + exitCode...');
+        final results = await Future.wait<Object>([
+          stdoutFuture,
+          stderrFuture,
+          exitCodeFuture,
+        ]).timeout(timeout);
+
+        final stdout = results[0] as String;
+        final stderr = results[1] as String;
+        final exitCode = results[2] as int;
+        debugPrint('[RUNNER:$agentId] done: exitCode=$exitCode (${stopwatch.elapsed})');
+
+        result = ProcessResult(process.pid, exitCode, stdout, stderr);
+      } else {
+        // macOS/Linux: 셸에서 export PATH로 주입
+        final shell = Platform.environment['SHELL'] ?? '/bin/zsh';
+        final wrappedCmd = 'export PATH="$loginPath:\$PATH"; $cmd';
+        result = await Process.run(
+          shell,
+          ['-c', wrappedCmd],
+          workingDirectory: workingDir,
+        ).timeout(timeout);
+      }
 
       final stdout = (result.stdout as String).trim();
       final stderr = (result.stderr as String).trim();
@@ -141,13 +183,35 @@ class AgentRunnerService {
     );
   }
 
-  /// 각 CLI에 맞는 비대화형 실행 명령 생성
+  /// 각 CLI에 맞는 비대화형 실행 명령 생성 (로그 표시용)
   String _buildCommand(String agentId, String promptFilePath) {
+    if (Platform.isWindows) {
+      return _buildWindowsCmd(agentId, promptFilePath);
+    }
+    return _buildUnixCommand(agentId, promptFilePath);
+  }
+
+  /// Windows용 명령 문자열 (stdin으로 프롬프트 전달)
+  String _buildWindowsCmd(String agentId, String promptFilePath) {
+    switch (agentId) {
+      case 'claude':
+        return 'claude -p --dangerously-skip-permissions';
+      case 'codex':
+        return 'codex exec -';
+      case 'gemini':
+        return 'gemini -p';
+      default:
+        return agentId;
+    }
+  }
+
+  /// macOS/Linux용 명령 생성: cat으로 파일 읽기
+  String _buildUnixCommand(String agentId, String promptFilePath) {
     switch (agentId) {
       case 'claude':
         return 'cat \'$promptFilePath\' | claude -p --dangerously-skip-permissions';
       case 'codex':
-        return 'codex exec "\$(cat \'$promptFilePath\')"';
+        return 'cat \'$promptFilePath\' | codex exec -';
       case 'gemini':
         return 'gemini -p "\$(cat \'$promptFilePath\')"';
       default:
