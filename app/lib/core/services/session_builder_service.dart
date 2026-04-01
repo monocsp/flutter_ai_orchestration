@@ -86,6 +86,7 @@ class SessionBuilderService {
               stage.promptTemplate, stage.templatePreset);
       final rendered = templateRenderer.render(template, {
         'SOURCE_DOCUMENT_PATH': config.sourceDocumentPath,
+        'SOURCE_DOCUMENT_CONTENT': config.sourceDocumentContent ?? '',
         'PROVIDER_NAME': stage.role == StageRole.analysis
             ? config.analysisAgent.displayName
             : config.criticAgent.displayName,
@@ -94,6 +95,12 @@ class SessionBuilderService {
         'RISK_FOCUS': config.riskFocus,
         'OUTPUT_FORMAT': config.outputFormat,
         'SESSION_CREATED_AT': createdAt,
+        'ANALYSIS_MODE': SessionConfig.analysisModes[config.analysisMode] ?? config.analysisMode,
+        'PERSONA': config.persona,
+        'FOCUS_POINTS': config.focusPoints.isNotEmpty
+            ? config.focusPoints.map((p) => '- $p').join('\n')
+            : '',
+        'USER_RESULT_REQUEST': config.userResultRequest,
         'ANALYSIS_RESULT_PATH': enabledStages.isNotEmpty
             ? '${_resultPrefix(1)}_analysis_result.md'
             : '',
@@ -102,7 +109,14 @@ class SessionBuilderService {
             : '',
       });
 
-      await File(promptPath).writeAsString(rendered);
+      // 프롬프트 끝에 기준 문서 내용을 첨부
+      final promptWithDoc = StringBuffer(rendered);
+      if (config.sourceDocumentContent != null && config.sourceDocumentContent!.isNotEmpty) {
+        promptWithDoc.writeln('\n\n---\n\n## 기준 문서 내용\n');
+        promptWithDoc.writeln(config.sourceDocumentContent);
+      }
+
+      await File(promptPath).writeAsString(promptWithDoc.toString());
       await _writeResultPlaceholder(resultPath, stage.name, createdAt);
 
       promptPaths.add(promptPath);

@@ -92,36 +92,118 @@ class AgentStatusBar extends ConsumerWidget {
       padding: const EdgeInsets.only(right: 12),
       child: Tooltip(
         message: _tooltipText(status),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: status.installed
-                    ? (status.executable
-                        ? const Color(0xFF22C55E)
-                        : const Color(0xFFFBBF24))
-                    : const Color(0xFFEF4444),
+        child: InkWell(
+          onTap: status.installed ? null : () => _showInstallDialog(context, status),
+          borderRadius: BorderRadius.circular(4),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: status.installed
+                      ? (status.executable
+                          ? const Color(0xFF22C55E)
+                          : const Color(0xFFFBBF24))
+                      : const Color(0xFFEF4444),
+                ),
               ),
-            ),
-            const SizedBox(width: 4),
-            Text(
-              status.displayName,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w500,
-                color: status.installed
-                    ? const Color(0xFF334155)
-                    : Colors.grey.shade400,
+              const SizedBox(width: 4),
+              Text(
+                status.displayName,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                  color: status.installed
+                      ? const Color(0xFF334155)
+                      : Colors.grey.shade400,
+                  decoration: status.installed ? null : TextDecoration.underline,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
+  }
+
+  void _showInstallDialog(BuildContext context, AgentInstallStatus status) {
+    final installCmd = _getInstallCommand(status.agentId);
+    final loginCmd = _getLoginCommand(status.agentId);
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.download, size: 20, color: Color(0xFF0D9488)),
+            const SizedBox(width: 8),
+            Text('${status.displayName} 설치 방법', style: const TextStyle(fontSize: 16)),
+          ],
+        ),
+        content: SizedBox(
+          width: 400,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('터미널(명령 프롬프트)에서 아래 명령어를 실행하세요:', style: TextStyle(fontSize: 13)),
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E293B),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('# 1. 설치', style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+                    const SizedBox(height: 4),
+                    SelectableText(installCmd, style: const TextStyle(fontSize: 13, color: Colors.white, fontFamily: 'monospace')),
+                    const SizedBox(height: 12),
+                    Text('# 2. 로그인', style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+                    const SizedBox(height: 4),
+                    SelectableText(loginCmd, style: const TextStyle(fontSize: 13, color: Colors.white, fontFamily: 'monospace')),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text('설치 후 앱을 재시작하면 자동으로 감지됩니다.', style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('닫기'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _getInstallCommand(String agentId) {
+    switch (agentId) {
+      case 'claude': return 'npm install -g @anthropic-ai/claude-code';
+      case 'codex': return 'npm install -g @openai/codex';
+      case 'gemini': return 'npm install -g @google/gemini-cli';
+      case 'copilot': return 'npm install -g @github/copilot';
+      default: return '';
+    }
+  }
+
+  String _getLoginCommand(String agentId) {
+    switch (agentId) {
+      case 'claude': return 'claude login';
+      case 'codex': return 'codex login';
+      case 'gemini': return 'gemini  (첫 실행 시 자동 인증)';
+      case 'copilot': return 'copilot  (첫 실행 시 /login)';
+      default: return '';
+    }
   }
 
   String _tooltipText(AgentInstallStatus status) {
