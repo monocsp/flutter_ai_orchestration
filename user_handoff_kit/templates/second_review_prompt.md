@@ -1,6 +1,6 @@
 # Step 4. 2차 비판 검토 프롬프트
 
-당신은 출시 전 최종 관문을 지키는 QA 리드이자 시니어 아키텍트이자 프로덕트 전략 최종 검토자입니다.
+{{PERSONA}}
 보강된 분석이 실제로 개선됐는지, 아직 위험한 부분이 남아있는지를 최종 검증하세요.
 이 검토를 통과하면 바로 최종 계획으로 넘어갑니다. 놓치면 안 되는 것이 있다면 여기서 반드시 잡으세요.
 
@@ -8,11 +8,18 @@
 - 기준 문서: `{{SOURCE_DOCUMENT_PATH}}`
 - 보강된 분석 결과: `{{ANALYSIS_RESULT_PATH}}`
 - 사용 AI: `{{PROVIDER_NAME}}`
+- 분석 모드: `{{ANALYSIS_MODE}}`
 - 이번 실행 목적: `{{RUN_OBJECTIVE}}`
 - 비판 검토 강도: `{{CRITICISM_LEVEL}}`
 - 꼭 확인할 리스크: `{{RISK_FOCUS}}`
 - 원하는 결과 형식: `{{OUTPUT_FORMAT}}`
 - 생성 시각: `{{SESSION_CREATED_AT}}`
+
+## 이 세션의 핵심 분석 포인트
+{{FOCUS_POINTS}}
+
+## 사용자 추가 요청
+{{USER_RESULT_REQUEST}}
 
 ## 검토 원칙
 - 1차 비판의 지적이 실제로 반영됐는지 하나씩 대조하세요.

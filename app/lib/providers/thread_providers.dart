@@ -1,13 +1,16 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import '../core/models/agent_provider.dart';
 import '../core/models/orchestration_thread.dart';
 import '../core/models/orchestration_stage.dart';
 import '../core/models/session_config.dart';
+import '../core/models/template_preset.dart';
 import '../core/models/parallel_comparison.dart';
 import '../core/services/agent_detection_service.dart';
+import '../core/services/session_builder_service.dart';
 import '../core/services/agent_runner_service.dart';
 import '../core/services/error_log_service.dart';
 import 'session_providers.dart';
@@ -68,12 +71,45 @@ class ThreadListState {
 }
 
 class ThreadListNotifier extends Notifier<ThreadListState> {
+  /// 현재 실행 중인 AgentRunnerService (중단 시 프로세스 kill 용도)
+  AgentRunnerService? _activeRunner;
+
+  /// 마지막 Agent 감지 결과 캐시 (fallback용)
+  List<AgentInstallStatus> _cachedAgentStatuses = [];
+
   @override
   ThreadListState build() => const ThreadListState();
 
-  /// 오케스트레이션 중단
+  /// 설치된 Agent 중 fallbackAgentId를 제외한 대체 Agent 찾기
+  /// 우선순위: claude > gemini > codex > 기타
+  String? _findFallbackAgent(String failedAgentId) {
+    const priority = ['claude', 'gemini', 'codex'];
+    for (final id in priority) {
+      if (id == failedAgentId) continue;
+      final status = _cachedAgentStatuses
+          .where((s) => s.agentId == id && s.installed)
+          .firstOrNull;
+      if (status != null) return id;
+    }
+    return null;
+  }
+
+  /// Agent 이름 가져오기
+  String _agentDisplayName(String agentId) {
+    return AgentProvider.builtIn
+        .firstWhere((a) => a.id == agentId, orElse: () => AgentProvider.builtIn.last)
+        .displayName;
+  }
+
+  /// 오케스트레이션/병렬 비교 중단
   void stopOrchestration() {
     state = state.copyWith(isStopped: true);
+
+    // 실행 중인 CLI 프로세스 강제 종료
+    _activeRunner?.killAll();
+
+    // 진행 중인 병렬 비교의 실행 중 단계를 실패로
+    _stopInProgressComparisons();
 
     // 진행 중인 스레드의 현재 단계를 실패로
     final thread = state.selectedThread;
@@ -101,6 +137,143 @@ class ThreadListNotifier extends Notifier<ThreadListState> {
     final threads = List<OrchestrationThread>.from(state.threads);
     threads[threadIdx] = updatedThread;
     state = state.copyWith(threads: threads);
+  }
+
+  /// 진행 중인 병렬 비교의 실행 중 run들을 실패로 표시
+  void _stopInProgressComparisons() {
+    final comparisons = List<ParallelComparison>.from(state.comparisons);
+    for (var ci = 0; ci < comparisons.length; ci++) {
+      final comp = comparisons[ci];
+      if (comp.status != ThreadStatus.inProgress) continue;
+
+      final runs = List<ParallelRun>.from(comp.runs);
+      bool changed = false;
+      for (var ri = 0; ri < runs.length; ri++) {
+        if (runs[ri].status == ThreadStatus.inProgress) {
+          runs[ri] = runs[ri].copyWith(
+            status: ThreadStatus.failed,
+            resultContent: '> 사용자에 의해 중단되었습니다.',
+            completedAt: DateTime.now(),
+          );
+          changed = true;
+        }
+      }
+      if (changed) {
+        comparisons[ci] = comp.copyWith(
+          runs: runs,
+          status: ThreadStatus.failed,
+        );
+      }
+    }
+    state = state.copyWith(comparisons: comparisons);
+  }
+
+  /// 실패한 단계부터 재시도하여 이어서 실행
+  Future<void> retryFromStage(String threadId, int stageIndex) async {
+    state = state.copyWith(isStopped: false);
+
+    final session = ref.read(sessionProvider);
+    final currentThread = _getThread(threadId);
+    if (currentThread == null) return;
+
+    // 스레드를 다시 inProgress로
+    _updateThreadStatus(threadId, ThreadStatus.inProgress);
+
+    final enabledStages = session.stages.where((s) => s.enabled).toList();
+    final runner = AgentRunnerService();
+    _activeRunner = runner;
+
+    final stageStartIndex = 2; // index 0 = agent check, 1 = settings
+
+    for (var i = stageIndex; i < currentThread.stages.length; i++) {
+      if (state.isStopped) break;
+
+      final stage = _getThread(threadId)!.stages[i];
+      final artifactIdx = i - stageStartIndex;
+      if (artifactIdx < 0 || artifactIdx >= enabledStages.length) continue;
+
+      debugPrint('[ORCH:RETRY] Starting stage $i: ${stage.name}');
+
+      String? promptContent;
+      if (stage.promptPath != null) {
+        try {
+          promptContent = await File(stage.promptPath!).readAsString();
+        } catch (e) {
+          await ErrorLogService.log(
+            stage: stage.name,
+            error: '프롬프트 파일 읽기 실패: $e\npath: ${stage.promptPath}',
+          );
+        }
+      }
+
+      final originalStage = enabledStages[artifactIdx];
+      final agentId = originalStage.role == StageRole.analysis
+          ? session.analysisAgent.id
+          : session.criticAgent.id;
+      final agentDisplayName = originalStage.role == StageRole.analysis
+          ? session.analysisAgent.displayName
+          : session.criticAgent.displayName;
+
+      _updateStage(threadId, i, (s) => s.copyWith(
+        status: ThreadStatus.inProgress,
+        agentName: agentDisplayName,
+        promptContent: promptContent,
+        resultContent: null,
+        startedAt: DateTime.now(),
+      ));
+
+      if (state.isStopped) break;
+
+      final result = await runner.run(
+        agentId: agentId,
+        promptContent: promptContent ?? '',
+        workingDir: session.projectRootPath,
+      );
+
+      if (state.isStopped) break;
+
+      if (result.success) {
+        final parsed = AgentRunnerService.parseMemo(result.output);
+
+        if (stage.resultPath != null) {
+          await File(stage.resultPath!).writeAsString(parsed.mainContent);
+        }
+
+        _updateStage(threadId, i, (s) => s.copyWith(
+          status: ThreadStatus.completed,
+          resultContent: parsed.memo != null
+              ? '${parsed.memo}\n\n---\n\n${parsed.mainContent}'
+              : parsed.mainContent,
+          completedAt: DateTime.now(),
+        ));
+      } else {
+        final errorMsg = '## 실행 실패\n\n'
+            '- Exit code: ${result.exitCode}\n'
+            '- 오류: ${result.error}\n\n'
+            '### 출력\n```\n${result.output}\n```';
+
+        await ErrorLogService.log(
+          stage: stage.name,
+          error: result.error ?? '알 수 없는 오류',
+          stdout: result.output,
+          command: result.command,
+          exitCode: result.exitCode,
+        );
+
+        _updateStage(threadId, i, (s) => s.copyWith(
+          status: ThreadStatus.failed,
+          resultContent: errorMsg,
+          completedAt: DateTime.now(),
+        ));
+        // 실패하면 여기서 멈춤 (사용자가 재시도 가능)
+        return;
+      }
+    }
+
+    // 모든 단계 완료
+    if (!state.isStopped) {
+      _updateThreadStatus(threadId, ThreadStatus.completed);
+    }
   }
 
   /// 전체 오케스트레이션 자동 실행
@@ -155,6 +328,7 @@ class ThreadListNotifier extends Notifier<ThreadListState> {
     // Agent 상태 확인
     final detection = AgentDetectionService();
     final allStatuses = await detection.detectAll();
+    _cachedAgentStatuses = allStatuses;
 
     final analysisStatus = allStatuses
         .where((s) => s.agentId == session.analysisAgent.id)
@@ -217,13 +391,135 @@ class ThreadListNotifier extends Notifier<ThreadListState> {
       return;
     }
 
-    // Step 0.5: 설정 분석 — "자동" 설정이 있으면 AI가 계획서를 보고 결정
+    // Step 0.5: 모드 자동추천 (UI에서 이미 추천되었을 수 있음)
     final sessionNotifier = ref.read(sessionProvider.notifier);
+
+    // 모드 자동추천 단계 삽입
+    final modeRecommendStage = StageThread(
+      stepNumber: 0,
+      name: '모드 자동추천',
+      description: '문서를 분석하여 최적의 분석 모드를 결정합니다.',
+      status: ThreadStatus.inProgress,
+      startedAt: DateTime.now(),
+    );
+    {
+      final currentThread = _getThread(tempId)!;
+      final stages = List<StageThread>.from(currentThread.stages);
+      stages.insert(1, modeRecommendStage); // index 0 = agent check, index 1 = mode recommend
+      final threads = List<OrchestrationThread>.from(state.threads);
+      final threadIdx = state.threads.indexWhere((t) => t.id == tempId);
+      threads[threadIdx] = currentThread.copyWith(stages: stages);
+      state = state.copyWith(threads: threads);
+    }
+
+    // 모드 자동추천 실행 (UI에서 이미 추천된 경우 결과만 표시)
+    if (session.autoPersona != null && session.autoPersona!.isNotEmpty) {
+      // 이미 추천됨 → 결과만 표시
+      final modeName = SessionConfig.analysisModes[session.analysisMode] ?? session.analysisMode;
+      _updateStage(tempId, 1, (s) => s.copyWith(
+        status: ThreadStatus.completed,
+        resultContent: '## 모드 자동추천 완료\n\n'
+            '- 추천 모드: **$modeName**\n'
+            '- 페르소나: ${session.autoPersona}\n',
+        completedAt: DateTime.now(),
+      ));
+    } else if (session.sourceDocumentContent != null) {
+      // 아직 추천 안 됨 → 여기서 실행
+      final preview = session.sourceDocumentContent!.length > 500
+          ? session.sourceDocumentContent!.substring(0, 500)
+          : session.sourceDocumentContent!;
+      final prompt = SessionConfig.buildModeRecommendPrompt(preview);
+
+      // 설치된 Agent 중 가장 우선순위 높은 것으로 추천
+      String? recommendAgent;
+      const priority = ['claude', 'gemini', 'codex'];
+      for (final id in priority) {
+        if (allStatuses.any((s) => s.agentId == id && s.installed)) {
+          recommendAgent = id;
+          break;
+        }
+      }
+
+      if (recommendAgent != null) {
+        final runner = AgentRunnerService();
+        _activeRunner = runner;
+        final result = await runner.run(agentId: recommendAgent, promptContent: prompt);
+
+        if (result.success) {
+          try {
+            final jsonMatch = RegExp(r'\{[\s\S]*?\}').firstMatch(result.output);
+            if (jsonMatch != null) {
+              final parsed = jsonDecode(jsonMatch.group(0)!) as Map<String, dynamic>;
+              final mode = parsed['mode'] as String?;
+              final reason = parsed['reason'] as String?;
+
+              if (mode != null) {
+                final customModeName = parsed['customModeName'] as String?;
+
+                if (SessionConfig.analysisModes.containsKey(mode)) {
+                  sessionNotifier.setAnalysisMode(mode);
+                  final defaults = SessionConfig.defaultsForMode(mode);
+                  if (defaults.containsKey('templatePreset')) {
+                    final preset = TemplatePreset.values.firstWhere(
+                      (p) => p.name == defaults['templatePreset'],
+                      orElse: () => TemplatePreset.developer,
+                    );
+                    sessionNotifier.setStageTemplatePreset(0, preset, cascadeFromFirst: true);
+                  }
+                  if (defaults.containsKey('runObjective')) sessionNotifier.setRunObjective(defaults['runObjective']!);
+                  if (defaults.containsKey('criticismLevel')) sessionNotifier.setCriticismLevel(defaults['criticismLevel']!);
+                  if (defaults.containsKey('riskFocus')) sessionNotifier.setRiskFocus(defaults['riskFocus']!);
+                } else {
+                  // 기존 모드에 없는 경우 → 직접 설정
+                  sessionNotifier.setAnalysisMode('custom');
+                }
+
+                final displayName = SessionConfig.analysisModes[mode] ?? customModeName ?? mode;
+                _updateStage(tempId, 1, (s) => s.copyWith(
+                  status: ThreadStatus.completed,
+                  resultContent: '## 모드 자동추천 완료\n\n'
+                      '- 추천 모드: **$displayName**\n'
+                      '- 이유: ${reason ?? '-'}\n',
+                  completedAt: DateTime.now(),
+                ));
+              }
+            }
+          } catch (_) {}
+        }
+      }
+
+      // 추천 실패해도 계속 진행
+      final currentStage = _getThread(tempId)!.stages[1];
+      if (currentStage.status == ThreadStatus.inProgress) {
+        final modeName = SessionConfig.analysisModes[session.analysisMode] ?? session.analysisMode;
+        _updateStage(tempId, 1, (s) => s.copyWith(
+          status: ThreadStatus.completed,
+          resultContent: '## 모드 자동추천\n\n'
+              '자동추천을 수행하지 못했습니다. 현재 설정된 모드로 진행합니다.\n'
+              '- 현재 모드: **$modeName**\n',
+          completedAt: DateTime.now(),
+        ));
+      }
+    } else {
+      final modeName = SessionConfig.analysisModes[session.analysisMode] ?? session.analysisMode;
+      _updateStage(tempId, 1, (s) => s.copyWith(
+        status: ThreadStatus.completed,
+        resultContent: '## 모드 확인\n\n- 현재 모드: **$modeName**\n',
+        completedAt: DateTime.now(),
+      ));
+    }
+
+    if (state.isStopped) return;
+
+    // 세션 상태 다시 읽기 (모드 추천으로 변경됐을 수 있음)
+    final updatedSession = ref.read(sessionProvider);
+
+    // Step 1: 설정 분석 — "자동" 설정이 있으면 AI가 계획서를 보고 결정
     final hasAuto = SessionConfig.hasAutoSettings(
-      runObjective: session.runObjective,
-      criticismLevel: session.criticismLevel,
-      riskFocus: session.riskFocus,
-      outputFormat: session.outputFormat,
+      runObjective: updatedSession.runObjective,
+      criticismLevel: updatedSession.criticismLevel,
+      riskFocus: updatedSession.riskFocus,
+      outputFormat: updatedSession.outputFormat,
     );
 
     // 설정 분석 단계 추가 (자동이든 수동이든 표시)
@@ -237,28 +533,31 @@ class ThreadListNotifier extends Notifier<ThreadListState> {
       startedAt: DateTime.now(),
     );
 
-    // 기존 stages 리스트에 설정 단계 삽입 (Step 0 다음, Step 1 이전)
+    // 기존 stages 리스트에 설정 단계 삽입 (index 0 = agent check, 1 = mode recommend, 2 = settings)
     {
       final currentThread = _getThread(tempId)!;
       final stages = List<StageThread>.from(currentThread.stages);
-      stages.insert(1, settingsStage); // index 0 = agent check, index 1 = settings
+      stages.insert(2, settingsStage);
       final threads = List<OrchestrationThread>.from(state.threads);
       final threadIdx = state.threads.indexWhere((t) => t.id == tempId);
       threads[threadIdx] = currentThread.copyWith(stages: stages);
       state = state.copyWith(threads: threads);
     }
 
-    if (hasAuto && session.sourceDocumentContent != null) {
+    if (hasAuto && updatedSession.sourceDocumentContent != null) {
       // AI에게 계획서를 보여주고 설정 추천 받기
       final autoPrompt = SessionConfig.buildAutoSettingsPrompt(
-        documentContent: session.sourceDocumentContent!,
-        runObjective: session.runObjective,
-        criticismLevel: session.criticismLevel,
-        riskFocus: session.riskFocus,
-        outputFormat: session.outputFormat,
+        documentContent: updatedSession.sourceDocumentContent!,
+        runObjective: updatedSession.runObjective,
+        criticismLevel: updatedSession.criticismLevel,
+        riskFocus: updatedSession.riskFocus,
+        outputFormat: updatedSession.outputFormat,
+        analysisMode: updatedSession.analysisMode,
+        userResultRequest: updatedSession.userResultRequest,
       );
 
       final runner = AgentRunnerService();
+      _activeRunner = runner;
       final autoResult = await runner.run(
         agentId: session.analysisAgent.id,
         promptContent: autoPrompt,
@@ -285,7 +584,7 @@ class ThreadListNotifier extends Notifier<ThreadListState> {
           settingsResult.writeln('');
         }
 
-        _updateStage(tempId, 1, (s) => s.copyWith(
+        _updateStage(tempId, 2, (s) => s.copyWith(
           status: ThreadStatus.completed,
           resultContent: settingsResult.toString(),
           completedAt: DateTime.now(),
@@ -294,7 +593,7 @@ class ThreadListNotifier extends Notifier<ThreadListState> {
         // AI 실패 시 기본값으로 폴백
         _applyFallbackSettings(sessionNotifier: sessionNotifier);
 
-        _updateStage(tempId, 1, (s) => s.copyWith(
+        _updateStage(tempId, 2, (s) => s.copyWith(
           status: ThreadStatus.completed,
           resultContent: '## 설정 자동 분석\n\n'
               'AI 분석에 실패하여 기본 설정을 적용했습니다.\n\n'
@@ -311,15 +610,15 @@ class ThreadListNotifier extends Notifier<ThreadListState> {
       confirmResult.writeln('## 현재 설정 확인\n');
       confirmResult.writeln('| 항목 | 값 |');
       confirmResult.writeln('|------|-----|');
-      confirmResult.writeln('| 실행 목적 | ${session.runObjective} |');
-      confirmResult.writeln('| 비판 강도 | ${session.criticismLevel} |');
-      confirmResult.writeln('| 리스크 포커스 | ${session.riskFocus} |');
-      confirmResult.writeln('| 결과 형식 | ${session.outputFormat} |');
-      confirmResult.writeln('| 분석 Agent | ${session.analysisAgent.displayName} |');
-      confirmResult.writeln('| 검토 Agent | ${session.criticAgent.displayName} |');
+      confirmResult.writeln('| 실행 목적 | ${updatedSession.runObjective} |');
+      confirmResult.writeln('| 비판 강도 | ${updatedSession.criticismLevel} |');
+      confirmResult.writeln('| 리스크 포커스 | ${updatedSession.riskFocus} |');
+      confirmResult.writeln('| 결과 형식 | ${updatedSession.outputFormat} |');
+      confirmResult.writeln('| 분석 Agent | ${updatedSession.analysisAgent.displayName} |');
+      confirmResult.writeln('| 검토 Agent | ${updatedSession.criticAgent.displayName} |');
       confirmResult.writeln('\n> 사용자 지정 설정으로 1차 분석을 시작합니다.');
 
-      _updateStage(tempId, 1, (s) => s.copyWith(
+      _updateStage(tempId, 2, (s) => s.copyWith(
         status: ThreadStatus.completed,
         resultContent: confirmResult.toString(),
         completedAt: DateTime.now(),
@@ -329,13 +628,33 @@ class ThreadListNotifier extends Notifier<ThreadListState> {
     if (state.isStopped) return;
 
     // 세션 파일 생성 (설정이 확정된 후)
-    final artifact = await sessionNotifier.generateSession();
-    if (artifact == null) return;
+    debugPrint('[ORCH] Settings done. Generating session files...');
+    SessionArtifact? artifact;
+    try {
+      artifact = await sessionNotifier.generateSession();
+    } catch (e, stack) {
+      debugPrint('[ORCH] generateSession FAILED: $e');
+      debugPrint('[ORCH] stack: $stack');
+      await ErrorLogService.log(
+        stage: '세션 파일 생성',
+        error: 'generateSession 실패: $e\n$stack',
+      );
+    }
+    if (artifact == null) {
+      debugPrint('[ORCH] artifact is null, aborting orchestration');
+      await ErrorLogService.log(
+        stage: '세션 파일 생성',
+        error: 'artifact가 null입니다. 세션 파일 생성에 실패했습니다.',
+      );
+      _updateThreadStatus(tempId, ThreadStatus.failed);
+      return;
+    }
+    debugPrint('[ORCH] Session generated: ${artifact.sessionDirPath}');
 
     // 단계에 경로 할당
     _assignArtifactPaths(tempId, artifact);
 
-    // Step 0, Step 0.5 결과를 meta/ 폴더에 저장
+    // Step 0, 0.5, 1 결과를 meta/ 폴더에 저장
     try {
       final currentThread = _getThread(tempId)!;
       if (currentThread.stages.isNotEmpty &&
@@ -345,8 +664,13 @@ class ThreadListNotifier extends Notifier<ThreadListState> {
       }
       if (currentThread.stages.length > 1 &&
           currentThread.stages[1].resultContent != null) {
-        await File(p.join(artifact.metaDirPath, '00_settings_analysis.md'))
+        await File(p.join(artifact.metaDirPath, '00_mode_recommend.md'))
             .writeAsString(currentThread.stages[1].resultContent!);
+      }
+      if (currentThread.stages.length > 2 &&
+          currentThread.stages[2].resultContent != null) {
+        await File(p.join(artifact.metaDirPath, '00_settings_analysis.md'))
+            .writeAsString(currentThread.stages[2].resultContent!);
       }
     } catch (_) {
       // 저장 실패해도 오케스트레이션은 계속 진행
@@ -354,9 +678,10 @@ class ThreadListNotifier extends Notifier<ThreadListState> {
 
     // 자동 실행 루프
     final runner = AgentRunnerService();
+    _activeRunner = runner;
 
-    // index 0 = agent check, index 1 = settings, index 2~ = 실제 단계
-    final stageStartIndex = 2;
+    // index 0 = agent check, index 1 = mode recommend, index 2 = settings, index 3~ = 실제 단계
+    final stageStartIndex = 3;
 
     for (var i = stageStartIndex; i < _getThread(tempId)!.stages.length; i++) {
       if (state.isStopped) break;
@@ -365,36 +690,97 @@ class ThreadListNotifier extends Notifier<ThreadListState> {
       final stage = currentThread.stages[i];
       final artifactIdx = i - stageStartIndex;
 
+      debugPrint('[ORCH] Starting stage $i: ${stage.name}');
+      debugPrint('[ORCH]   promptPath: ${stage.promptPath}');
+      debugPrint('[ORCH]   resultPath: ${stage.resultPath}');
+
       // 이 단계를 진행 중으로
       String? promptContent;
       if (stage.promptPath != null) {
         try {
-          promptContent = await File(stage.promptPath!).readAsString();
-        } catch (_) {}
+          final promptFile = File(stage.promptPath!);
+          final exists = await promptFile.exists();
+          debugPrint('[ORCH]   promptFile exists: $exists');
+          if (exists) {
+            promptContent = await promptFile.readAsString();
+            debugPrint('[ORCH]   promptContent length: ${promptContent.length}');
+          } else {
+            await ErrorLogService.log(
+              stage: stage.name,
+              error: '프롬프트 파일이 존재하지 않습니다: ${stage.promptPath}',
+            );
+          }
+        } catch (e) {
+          debugPrint('[ORCH]   promptFile read error: $e');
+          await ErrorLogService.log(
+            stage: stage.name,
+            error: '프롬프트 파일 읽기 실패: $e\npath: ${stage.promptPath}',
+          );
+        }
       }
 
-      _updateStage(tempId, i, (s) => s.copyWith(
-        status: ThreadStatus.inProgress,
-        promptContent: promptContent,
-        startedAt: DateTime.now(),
-      ));
-
-      if (state.isStopped) break;
+      // 이전 단계 결과를 프롬프트에 첨부
+      if (promptContent != null && artifactIdx > 0) {
+        final prevResults = StringBuffer();
+        for (var j = stageStartIndex; j < i; j++) {
+          final prevStage = currentThread.stages[j];
+          if (prevStage.status == ThreadStatus.completed && prevStage.resultContent != null) {
+            prevResults.writeln('\n\n---\n\n## 이전 단계 결과: ${prevStage.name}\n');
+            prevResults.writeln(prevStage.resultContent);
+          }
+        }
+        if (prevResults.isNotEmpty) {
+          promptContent = '$promptContent${prevResults.toString()}';
+        }
+      }
 
       // AI 담당 agent 결정
       final originalStage = enabledStages[artifactIdx];
       final agentId = originalStage.role == StageRole.analysis
           ? session.analysisAgent.id
           : session.criticAgent.id;
+      final agentDisplayName = originalStage.role == StageRole.analysis
+          ? session.analysisAgent.displayName
+          : session.criticAgent.displayName;
 
-      // AI CLI 실행
-      final result = await runner.run(
+      _updateStage(tempId, i, (s) => s.copyWith(
+        status: ThreadStatus.inProgress,
+        agentName: agentDisplayName,
+        promptContent: promptContent,
+        startedAt: DateTime.now(),
+      ));
+
+      if (state.isStopped) break;
+
+      // AI CLI 실행 (실패 시 fallback Agent로 재시도)
+      var result = await runner.run(
         agentId: agentId,
         promptContent: promptContent ?? '',
         workingDir: session.projectRootPath,
       );
 
       if (state.isStopped) break;
+
+      // Fallback: 실패 시 다른 Agent로 자동 재시도
+      if (!result.success) {
+        final fallbackId = _findFallbackAgent(agentId);
+        if (fallbackId != null) {
+          final fallbackName = _agentDisplayName(fallbackId);
+          debugPrint('[ORCH] $agentDisplayName 실패 → $fallbackName 으로 재시도');
+
+          _updateStage(tempId, i, (s) => s.copyWith(
+            agentName: '$fallbackName (대체)',
+          ));
+
+          result = await runner.run(
+            agentId: fallbackId,
+            promptContent: promptContent ?? '',
+            workingDir: session.projectRootPath,
+          );
+
+          if (state.isStopped) break;
+        }
+      }
 
       if (result.success) {
         // 메모 파싱: 분석 과정 메모를 본문에서 분리
@@ -527,6 +913,7 @@ class ThreadListNotifier extends Notifier<ThreadListState> {
 
     // 병렬 실행
     final runner = AgentRunnerService();
+    _activeRunner = runner;
     final futures = <Future<void>>[];
 
     for (var i = 0; i < agentIds.length; i++) {
@@ -740,6 +1127,33 @@ class ThreadListNotifier extends Notifier<ThreadListState> {
           'value': val,
           'reason': (parsed['outputFormatReason'] as String?) ?? '-',
         });
+      }
+
+      // 페르소나 파싱
+      if (parsed.containsKey('persona')) {
+        final val = parsed['persona'] as String;
+        sessionNotifier.setAutoPersona(val);
+        applied.add({
+          'field': '전문가 페르소나',
+          'value': val,
+          'reason': (parsed['personaReason'] as String?) ?? '-',
+        });
+      }
+
+      // 집중 포인트 파싱
+      if (parsed.containsKey('focusPoints')) {
+        final raw = parsed['focusPoints'];
+        final points = (raw is List)
+            ? raw.map((e) => e.toString()).toList()
+            : <String>[];
+        if (points.isNotEmpty) {
+          sessionNotifier.setAutoFocusPoints(points);
+          applied.add({
+            'field': '핵심 분석 포인트',
+            'value': points.join(', '),
+            'reason': '문서 내용 기반 자동 도출',
+          });
+        }
       }
     } catch (_) {
       // 파싱 실패 시 폴백

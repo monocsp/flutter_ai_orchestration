@@ -5,6 +5,7 @@ class StageThread {
   final String name;
   final String description;
   final ThreadStatus status;
+  final String? agentName;
   final String? promptPath;
   final String? resultPath;
   final String? promptContent;
@@ -17,6 +18,7 @@ class StageThread {
     required this.name,
     this.description = '',
     this.status = ThreadStatus.pending,
+    this.agentName,
     this.promptPath,
     this.resultPath,
     this.promptContent,
@@ -30,6 +32,7 @@ class StageThread {
     String? name,
     String? description,
     ThreadStatus? status,
+    String? agentName,
     String? promptPath,
     String? resultPath,
     String? promptContent,
@@ -42,6 +45,7 @@ class StageThread {
       name: name ?? this.name,
       description: description ?? this.description,
       status: status ?? this.status,
+      agentName: agentName ?? this.agentName,
       promptPath: promptPath ?? this.promptPath,
       resultPath: resultPath ?? this.resultPath,
       promptContent: promptContent ?? this.promptContent,
