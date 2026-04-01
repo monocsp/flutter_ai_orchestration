@@ -94,7 +94,9 @@ class _AgentSetupScreenState extends ConsumerState<AgentSetupScreen> {
       case 'codex':
         return 'npm install -g @openai/codex';
       case 'gemini':
-        return 'npm install -g @anthropic-ai/claude-code'; // gemini는 별도
+        return 'npm install -g @google/gemini-cli';
+      case 'copilot':
+        return 'npm install -g @github/copilot';
       default:
         return 'npm install -g @anthropic-ai/claude-code';
     }

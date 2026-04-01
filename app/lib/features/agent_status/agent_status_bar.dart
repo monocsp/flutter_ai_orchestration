@@ -190,8 +190,8 @@ class AgentStatusBar extends ConsumerWidget {
     switch (agentId) {
       case 'claude': return 'npm install -g @anthropic-ai/claude-code';
       case 'codex': return 'npm install -g @openai/codex';
-      case 'gemini': return 'npm install -g @anthropic-ai/claude-code'; // gemini는 별도
-      case 'copilot': return 'gh extension install github/gh-copilot';
+      case 'gemini': return 'npm install -g @google/gemini-cli';
+      case 'copilot': return 'npm install -g @github/copilot';
       default: return '';
     }
   }
@@ -200,8 +200,8 @@ class AgentStatusBar extends ConsumerWidget {
     switch (agentId) {
       case 'claude': return 'claude login';
       case 'codex': return 'codex login';
-      case 'gemini': return 'gemini login';
-      case 'copilot': return 'gh auth login';
+      case 'gemini': return 'gemini  (첫 실행 시 자동 인증)';
+      case 'copilot': return 'copilot  (첫 실행 시 /login)';
       default: return '';
     }
   }
