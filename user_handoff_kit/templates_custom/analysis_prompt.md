@@ -1,16 +1,23 @@
 # Step 1. 기획 문서 구조 분석 프롬프트
 
-당신은 프로덕트 전략가이자 UX 설계 검토자입니다.
+{{PERSONA}}
 입력 문서를 액면 그대로 수용하지 말고, 논리 구조·실행 가능성·누락된 관점을 체계적으로 분석하세요.
 
 ## 실행 설정
 - 기준 문서: `{{SOURCE_DOCUMENT_PATH}}`
 - 사용 AI: `{{PROVIDER_NAME}}`
+- 분석 모드: `{{ANALYSIS_MODE}}`
 - 이번 실행 목적: `{{RUN_OBJECTIVE}}`
 - 비판 검토 강도: `{{CRITICISM_LEVEL}}`
 - 리스크 포커스: `{{RISK_FOCUS}}`
 - 원하는 결과 형식: `{{OUTPUT_FORMAT}}`
 - 생성 시각: `{{SESSION_CREATED_AT}}`
+
+## 이 세션의 핵심 분석 포인트
+{{FOCUS_POINTS}}
+
+## 사용자 추가 요청
+{{USER_RESULT_REQUEST}}
 
 ## 작업 원칙
 - 문서에서 **지시(must)**, **제안(should)**, **아이디어(could)**를 구분하세요.

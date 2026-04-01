@@ -2,10 +2,17 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 
 class ErrorLogService {
-  static final _logDir = p.join(
-    p.dirname(Platform.resolvedExecutable),
-    'logs',
-  );
+  static final _logDir = _resolveLogDir();
+
+  static String _resolveLogDir() {
+    if (Platform.isWindows) {
+      final userProfile = Platform.environment['USERPROFILE'] ?? '';
+      if (userProfile.isNotEmpty) {
+        return p.join(userProfile, 'Documents', 'AI Orchestration', 'logs');
+      }
+    }
+    return p.join(p.dirname(Platform.resolvedExecutable), 'logs');
+  }
 
   /// 에러를 로그 파일에 저장하고 경로를 반환
   static Future<String> log({

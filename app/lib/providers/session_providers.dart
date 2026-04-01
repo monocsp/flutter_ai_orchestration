@@ -17,6 +17,19 @@ String _resolveAppDir() {
   return p.dirname(exePath);
 }
 
+/// 사용자 데이터를 저장할 디렉토리 (output, logs 등)
+/// Program Files는 쓰기 권한이 없으므로 사용자 문서 폴더 사용
+String _resolveDataDir() {
+  if (Platform.isWindows) {
+    final userProfile = Platform.environment['USERPROFILE'] ?? '';
+    if (userProfile.isNotEmpty) {
+      return p.join(userProfile, 'Documents', 'AI Orchestration');
+    }
+  }
+  // macOS/Linux 또는 폴백: exe와 같은 디렉토리
+  return _resolveAppDir();
+}
+
 // Handoff kit path detection
 final handoffKitPathProvider = Provider<String>((ref) {
   final appDir = _resolveAppDir();
@@ -70,10 +83,16 @@ class SessionState {
   final AgentProvider criticAgent;
   final OrchestrationPreset preset;
   final List<OrchestrationStage> stages;
+  final String analysisMode; // 'code' | 'planning' | 'executive' | 'prompt_eng' | 'custom'
   final String runObjective;
   final String criticismLevel;
   final String riskFocus;
   final String outputFormat;
+  final String userResultRequest; // 유저가 원하는 결과 요청
+  final String? autoPersona; // AI가 자동 생성한 페르소나
+  final bool isAutoRecommending; // 모드 자동추천 진행 중
+  final bool autoRecommendEnabled; // 모드 자동추천 체크박스 ON/OFF
+  final List<String>? autoFocusPoints; // AI가 자동 생성한 집중 포인트
   final List<String> importedFiles;
   final SessionArtifact? lastArtifact;
   final bool isGenerating;
@@ -87,15 +106,21 @@ class SessionState {
     AgentProvider? criticAgent,
     OrchestrationPreset? preset,
     List<OrchestrationStage>? stages,
+    this.analysisMode = 'planning',
     this.runObjective = '자동',
     this.criticismLevel = '자동',
     this.riskFocus = '',
     this.outputFormat = '',
+    this.userResultRequest = '',
+    this.autoPersona,
+    this.isAutoRecommending = false,
+    this.autoRecommendEnabled = true,
+    this.autoFocusPoints,
     this.importedFiles = const [],
     this.lastArtifact,
     this.isGenerating = false,
   })  : outputRootPath =
-            outputRootPath ?? p.join(_resolveAppDir(), 'output'),
+            outputRootPath ?? p.join(_resolveDataDir(), 'output'),
         analysisAgent = analysisAgent ?? AgentProvider.builtIn[1],
         criticAgent = criticAgent ?? AgentProvider.builtIn[0],
         preset = preset ?? OrchestrationPreset.defaults[1],  // 5단계 기본
@@ -110,10 +135,16 @@ class SessionState {
     AgentProvider? criticAgent,
     OrchestrationPreset? preset,
     List<OrchestrationStage>? stages,
+    String? analysisMode,
     String? runObjective,
     String? criticismLevel,
     String? riskFocus,
     String? outputFormat,
+    String? userResultRequest,
+    String? autoPersona,
+    bool? isAutoRecommending,
+    bool? autoRecommendEnabled,
+    List<String>? autoFocusPoints,
     List<String>? importedFiles,
     SessionArtifact? lastArtifact,
     bool? isGenerating,
@@ -128,10 +159,16 @@ class SessionState {
       criticAgent: criticAgent ?? this.criticAgent,
       preset: preset ?? this.preset,
       stages: stages ?? this.stages,
+      analysisMode: analysisMode ?? this.analysisMode,
       runObjective: runObjective ?? this.runObjective,
       criticismLevel: criticismLevel ?? this.criticismLevel,
       riskFocus: riskFocus ?? this.riskFocus,
       outputFormat: outputFormat ?? this.outputFormat,
+      userResultRequest: userResultRequest ?? this.userResultRequest,
+      autoPersona: autoPersona ?? this.autoPersona,
+      isAutoRecommending: isAutoRecommending ?? this.isAutoRecommending,
+      autoRecommendEnabled: autoRecommendEnabled ?? this.autoRecommendEnabled,
+      autoFocusPoints: autoFocusPoints ?? this.autoFocusPoints,
       importedFiles: importedFiles ?? this.importedFiles,
       lastArtifact: lastArtifact ?? this.lastArtifact,
       isGenerating: isGenerating ?? this.isGenerating,
@@ -180,6 +217,30 @@ class SessionNotifier extends Notifier<SessionState> {
 
   void setCriticAgent(AgentProvider agent) {
     state = state.copyWith(criticAgent: agent);
+  }
+
+  void setAnalysisMode(String mode) {
+    state = state.copyWith(analysisMode: mode);
+  }
+
+  void setUserResultRequest(String value) {
+    state = state.copyWith(userResultRequest: value);
+  }
+
+  void setAutoPersona(String persona) {
+    state = state.copyWith(autoPersona: persona);
+  }
+
+  void setIsAutoRecommending(bool value) {
+    state = state.copyWith(isAutoRecommending: value);
+  }
+
+  void setAutoRecommendEnabled(bool value) {
+    state = state.copyWith(autoRecommendEnabled: value);
+  }
+
+  void setAutoFocusPoints(List<String> points) {
+    state = state.copyWith(autoFocusPoints: points);
   }
 
   void setPreset(OrchestrationPreset preset) {
@@ -247,6 +308,7 @@ class SessionNotifier extends Notifier<SessionState> {
       final builder = ref.read(sessionBuilderProvider);
       final config = SessionConfig(
         sourceDocumentPath: state.sourceDocumentPath!,
+        sourceDocumentContent: state.sourceDocumentContent,
         projectRootPath: state.projectRootPath,
         outputRootPath: state.outputRootPath,
         analysisAgent: state.analysisAgent,
@@ -257,6 +319,10 @@ class SessionNotifier extends Notifier<SessionState> {
         criticismLevel: state.criticismLevel,
         riskFocus: state.riskFocus,
         outputFormat: state.outputFormat,
+        analysisMode: state.analysisMode,
+        userResultRequest: state.userResultRequest,
+        persona: state.autoPersona ?? '',
+        focusPoints: state.autoFocusPoints ?? [],
       );
       final artifact = await builder.buildSession(config);
       state = state.copyWith(lastArtifact: artifact, isGenerating: false);

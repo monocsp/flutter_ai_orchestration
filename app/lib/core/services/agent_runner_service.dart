@@ -6,6 +6,20 @@ import 'agent_detection_service.dart';
 
 class AgentRunnerService {
 
+  /// 실행 중인 프로세스 목록 (중단 시 kill 용도)
+  final List<Process> _activeProcesses = [];
+
+  /// 모든 실행 중인 프로세스를 종료합니다.
+  void killAll() {
+    for (final process in _activeProcesses) {
+      try {
+        process.kill();
+      } catch (_) {}
+    }
+    _activeProcesses.clear();
+    debugPrint('[RUNNER] killAll: 모든 프로세스 종료 요청');
+  }
+
   /// 래핑 프롬프트: 모든 AI 호출 앞에 자동 주입
   static const _memoWrapper = '''
 [필수 지시 1] 결과의 전체 내용을 반드시 이 응답에 직접 출력하세요. 파일에 저장하거나 별도 경로에 쓰지 마세요. 요약만 출력하는 것은 금지입니다.
@@ -60,6 +74,7 @@ class AgentRunnerService {
           workingDirectory: workingDir,
           environment: env,
         );
+        _activeProcesses.add(process);
 
         process.stdin.add(utf8.encode(wrappedPrompt));
         await process.stdin.close();
@@ -76,6 +91,7 @@ class AgentRunnerService {
           stderrFuture,
           exitCodeFuture,
         ]).timeout(timeout);
+        _activeProcesses.remove(process);
 
         final stdout = results[0] as String;
         final stderr = results[1] as String;
@@ -197,7 +213,7 @@ class AgentRunnerService {
       case 'claude':
         return 'claude -p --dangerously-skip-permissions';
       case 'codex':
-        return 'codex exec -';
+        return 'codex exec --skip-git-repo-check -';
       case 'gemini':
         return 'gemini -p';
       default:
@@ -211,7 +227,7 @@ class AgentRunnerService {
       case 'claude':
         return 'cat \'$promptFilePath\' | claude -p --dangerously-skip-permissions';
       case 'codex':
-        return 'cat \'$promptFilePath\' | codex exec -';
+        return 'cat \'$promptFilePath\' | codex exec --skip-git-repo-check -';
       case 'gemini':
         return 'gemini -p "\$(cat \'$promptFilePath\')"';
       default:

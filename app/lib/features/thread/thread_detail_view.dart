@@ -130,6 +130,10 @@ class ThreadDetailView extends ConsumerWidget {
                 stage: stage,
                 index: index,
                 isLast: index == thread.stages.length - 1,
+                onRetry: stage.status == ThreadStatus.failed && index >= 2
+                    ? () => ref.read(threadListProvider.notifier)
+                        .retryFromStage(thread.id, index)
+                    : null,
               );
             },
           ),
