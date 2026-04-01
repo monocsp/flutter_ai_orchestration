@@ -73,8 +73,32 @@ class ThreadListNotifier extends Notifier<ThreadListState> {
   /// 현재 실행 중인 AgentRunnerService (중단 시 프로세스 kill 용도)
   AgentRunnerService? _activeRunner;
 
+  /// 마지막 Agent 감지 결과 캐시 (fallback용)
+  List<AgentInstallStatus> _cachedAgentStatuses = [];
+
   @override
   ThreadListState build() => const ThreadListState();
+
+  /// 설치된 Agent 중 fallbackAgentId를 제외한 대체 Agent 찾기
+  /// 우선순위: claude > gemini > codex > 기타
+  String? _findFallbackAgent(String failedAgentId) {
+    const priority = ['claude', 'gemini', 'codex'];
+    for (final id in priority) {
+      if (id == failedAgentId) continue;
+      final status = _cachedAgentStatuses
+          .where((s) => s.agentId == id && s.installed)
+          .firstOrNull;
+      if (status != null) return id;
+    }
+    return null;
+  }
+
+  /// Agent 이름 가져오기
+  String _agentDisplayName(String agentId) {
+    return AgentProvider.builtIn
+        .firstWhere((a) => a.id == agentId, orElse: () => AgentProvider.builtIn.last)
+        .displayName;
+  }
 
   /// 오케스트레이션/병렬 비교 중단
   void stopOrchestration() {
@@ -303,6 +327,7 @@ class ThreadListNotifier extends Notifier<ThreadListState> {
     // Agent 상태 확인
     final detection = AgentDetectionService();
     final allStatuses = await detection.detectAll();
+    _cachedAgentStatuses = allStatuses;
 
     final analysisStatus = allStatuses
         .where((s) => s.agentId == session.analysisAgent.id)
@@ -584,14 +609,35 @@ class ThreadListNotifier extends Notifier<ThreadListState> {
 
       if (state.isStopped) break;
 
-      // AI CLI 실행
-      final result = await runner.run(
+      // AI CLI 실행 (실패 시 fallback Agent로 재시도)
+      var result = await runner.run(
         agentId: agentId,
         promptContent: promptContent ?? '',
         workingDir: session.projectRootPath,
       );
 
       if (state.isStopped) break;
+
+      // Fallback: 실패 시 다른 Agent로 자동 재시도
+      if (!result.success) {
+        final fallbackId = _findFallbackAgent(agentId);
+        if (fallbackId != null) {
+          final fallbackName = _agentDisplayName(fallbackId);
+          debugPrint('[ORCH] $agentDisplayName 실패 → $fallbackName 으로 재시도');
+
+          _updateStage(tempId, i, (s) => s.copyWith(
+            agentName: '$fallbackName (대체)',
+          ));
+
+          result = await runner.run(
+            agentId: fallbackId,
+            promptContent: promptContent ?? '',
+            workingDir: session.projectRootPath,
+          );
+
+          if (state.isStopped) break;
+        }
+      }
 
       if (result.success) {
         // 메모 파싱: 분석 과정 메모를 본문에서 분리
