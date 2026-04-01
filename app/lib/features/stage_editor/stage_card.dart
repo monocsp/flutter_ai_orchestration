@@ -150,7 +150,8 @@ class _StageCardState extends ConsumerState<StageCard> {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(20),
-        child: Column(
+        child: SingleChildScrollView(
+          child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Header row
@@ -482,6 +483,7 @@ class _StageCardState extends ConsumerState<StageCard> {
               ),
             ),
           ],
+        ),
         ),
       ),
     );
