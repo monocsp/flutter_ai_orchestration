@@ -346,18 +346,22 @@ class _StageCardState extends ConsumerState<StageCard> {
             const SizedBox(height: 12),
 
             // Template content toolbar
-            Row(
+            IgnorePointer(
+              ignoring: _isAutoRecommended,
+              child: Opacity(
+                opacity: _isAutoRecommended ? 0.5 : 1.0,
+                child: Row(
               children: [
-                const Text(
-                  '프롬프트 내용',
-                  style: TextStyle(
+                Text(
+                  _isAutoRecommended ? '프롬프트 내용 (자동추천됨)' : '프롬프트 내용',
+                  style: const TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
                     color: Color(0xFF334155),
                   ),
                 ),
                 const Spacer(),
-                if (!_isEditing && _templateContent != null)
+                if (!_isEditing && _templateContent != null && !_isAutoRecommended)
                   TextButton.icon(
                     onPressed: () => setState(() => _isEditing = true),
                     icon: const Icon(Icons.edit, size: 14),
@@ -411,6 +415,8 @@ class _StageCardState extends ConsumerState<StageCard> {
                     ),
                   ),
               ],
+            ),
+            ),
             ),
             const SizedBox(height: 8),
 
