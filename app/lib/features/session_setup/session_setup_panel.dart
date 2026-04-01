@@ -155,7 +155,15 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
                         value: _autoRecommendEnabled,
                         onChanged: _isRecommending
                             ? null // 추천 진행 중에는 끌 수 없음
-                            : (v) => setState(() => _autoRecommendEnabled = v ?? true),
+                            : (v) {
+                                final enabled = v ?? true;
+                                setState(() => _autoRecommendEnabled = enabled);
+                                if (!enabled) {
+                                  // 자동추천 끄면 상태 초기화 → 프롬프트 유형 등 활성화
+                                  ref.read(sessionProvider.notifier).setAutoPersona('');
+                                  ref.read(sessionProvider.notifier).setIsAutoRecommending(false);
+                                }
+                              },
                         activeColor: const Color(0xFF0D9488),
                       ),
                     ),
