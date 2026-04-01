@@ -3,6 +3,7 @@ enum TemplatePreset {
   developer('개발자용', '코드 파일 경로, 호출 체인, 회귀 테스트, 상태 관리 중심 분석'),
   planner('기획자용', 'MVP 범위, 이해관계자, 성공 지표, 실행 로드맵 중심 분석'),
   executive('경영진 피드백 분석용', '의도 해석, 긍정/부정 분리, must/should/could, 암묵적 기대 분석'),
+  promptEng('프롬프트 엔지니어링용', '프롬프트 구조 분석, 모호성 제거, 할루시네이션 방지, 개선안 도출'),
   custom('직접입력', '프롬프트를 직접 작성합니다');
 
   final String label;
@@ -19,6 +20,8 @@ enum TemplatePreset {
         return 'plan';
       case TemplatePreset.executive:
         return 'exec';
+      case TemplatePreset.promptEng:
+        return 'pe';
       case TemplatePreset.custom:
         return 'custom';
     }
