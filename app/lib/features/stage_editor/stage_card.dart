@@ -29,13 +29,6 @@ class _StageCardState extends ConsumerState<StageCard> {
   bool _isCustom = false;
   late TextEditingController _editController;
 
-  /// 모드 자동추천이 활성화(완료 또는 진행 중)되어 있는지
-  bool get _isAutoRecommended {
-    final session = ref.read(sessionProvider);
-    return session.isAutoRecommending ||
-        (session.autoPersona != null && session.autoPersona!.isNotEmpty);
-  }
-
   @override
   void initState() {
     super.initState();
@@ -153,6 +146,9 @@ class _StageCardState extends ConsumerState<StageCard> {
   @override
   Widget build(BuildContext context) {
     final stage = widget.stage;
+    final session = ref.watch(sessionProvider);
+    final isAutoRecommended = session.isAutoRecommending ||
+        (session.autoPersona != null && session.autoPersona!.isNotEmpty);
 
     return Card(
       clipBehavior: Clip.hardEdge,
@@ -206,7 +202,7 @@ class _StageCardState extends ConsumerState<StageCard> {
                     ],
                   ),
                 ),
-                if (!_isAutoRecommended)
+                if (!isAutoRecommended)
                   Switch(
                     value: stage.enabled,
                     activeThumbColor: widget.color,
@@ -275,13 +271,13 @@ class _StageCardState extends ConsumerState<StageCard> {
 
             // 프롬프트 프리셋 선택
             IgnorePointer(
-              ignoring: _isAutoRecommended,
+              ignoring: isAutoRecommended,
               child: Opacity(
-                opacity: _isAutoRecommended ? 0.5 : 1.0,
+                opacity: isAutoRecommended ? 0.5 : 1.0,
                 child: Row(
               children: [
                 Text(
-                  _isAutoRecommended ? '프롬프트 유형 (자동추천됨)' : '프롬프트 유형',
+                  isAutoRecommended ? '프롬프트 유형 (자동추천됨)' : '프롬프트 유형',
                   style: const TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
@@ -348,13 +344,13 @@ class _StageCardState extends ConsumerState<StageCard> {
 
             // Template content toolbar
             IgnorePointer(
-              ignoring: _isAutoRecommended,
+              ignoring: isAutoRecommended,
               child: Opacity(
-                opacity: _isAutoRecommended ? 0.5 : 1.0,
+                opacity: isAutoRecommended ? 0.5 : 1.0,
                 child: Row(
               children: [
                 Text(
-                  _isAutoRecommended ? '프롬프트 내용 (자동추천됨)' : '프롬프트 내용',
+                  isAutoRecommended ? '프롬프트 내용 (자동추천됨)' : '프롬프트 내용',
                   style: const TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
@@ -362,7 +358,7 @@ class _StageCardState extends ConsumerState<StageCard> {
                   ),
                 ),
                 const Spacer(),
-                if (!_isEditing && _templateContent != null && !_isAutoRecommended)
+                if (!_isEditing && _templateContent != null && !isAutoRecommended)
                   TextButton.icon(
                     onPressed: () => setState(() => _isEditing = true),
                     icon: const Icon(Icons.edit, size: 14),
