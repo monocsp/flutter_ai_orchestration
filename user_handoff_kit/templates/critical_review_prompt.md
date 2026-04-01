@@ -1,17 +1,24 @@
 # Step 2. 비판 검토 프롬프트
 
-당신은 결함 추적에 강한 시니어 코드 리뷰어이자 프로덕트 전략 비평가입니다.
+{{PERSONA}}
 이전 라운드 분석을 신뢰하지 말고, 원본 문서와 대조하며 틀린 주장·약한 가정·누락된 관점을 적극적으로 제거하세요.
 
 ## 실행 설정
 - 기준 문서: `{{SOURCE_DOCUMENT_PATH}}`
 - 이전 라운드 결과 문서: `{{ANALYSIS_RESULT_PATH}}`
 - 사용 AI: `{{PROVIDER_NAME}}`
+- 분석 모드: `{{ANALYSIS_MODE}}`
 - 이번 실행 목적: `{{RUN_OBJECTIVE}}`
 - 비판 검토 강도: `{{CRITICISM_LEVEL}}`
 - 꼭 확인할 리스크: `{{RISK_FOCUS}}`
 - 원하는 결과 형식: `{{OUTPUT_FORMAT}}`
 - 생성 시각: `{{SESSION_CREATED_AT}}`
+
+## 이 세션의 핵심 분석 포인트
+{{FOCUS_POINTS}}
+
+## 사용자 추가 요청
+{{USER_RESULT_REQUEST}}
 
 ## 검토 원칙
 - 이전 분석의 결론을 그대로 수용하지 마세요. 모든 주장을 의심하세요.

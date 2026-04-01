@@ -139,13 +139,15 @@ class _StageCardState extends ConsumerState<StageCard> {
   @override
   Widget build(BuildContext context) {
     final stage = widget.stage;
+    final session = ref.watch(sessionProvider);
+    // 자동추천 체크박스가 켜져 있으면 비활성화 (수정하려면 끄고 수정)
+    final isAutoRecommended = session.autoRecommendEnabled;
 
     return Card(
-      child: Padding(
+      clipBehavior: Clip.hardEdge,
+      child: ListView(
         padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+        children: [
             // Header row
             Row(
               children: [
@@ -193,13 +195,14 @@ class _StageCardState extends ConsumerState<StageCard> {
                     ],
                   ),
                 ),
-                Switch(
-                  value: stage.enabled,
-                  activeThumbColor: widget.color,
-                  onChanged: (v) {
-                    widget.onChanged(stage.copyWith(enabled: v));
-                  },
-                ),
+                if (!isAutoRecommended)
+                  Switch(
+                    value: stage.enabled,
+                    activeThumbColor: widget.color,
+                    onChanged: (v) {
+                      widget.onChanged(stage.copyWith(enabled: v));
+                    },
+                  ),
               ],
             ),
 
@@ -260,11 +263,15 @@ class _StageCardState extends ConsumerState<StageCard> {
             const SizedBox(height: 16),
 
             // 프롬프트 프리셋 선택
-            Row(
+            IgnorePointer(
+              ignoring: isAutoRecommended,
+              child: Opacity(
+                opacity: isAutoRecommended ? 0.5 : 1.0,
+                child: Row(
               children: [
-                const Text(
-                  '프롬프트 유형',
-                  style: TextStyle(
+                Text(
+                  isAutoRecommended ? '프롬프트 유형 (자동추천됨)' : '프롬프트 유형',
+                  style: const TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
                     color: Color(0xFF334155),
@@ -319,6 +326,8 @@ class _StageCardState extends ConsumerState<StageCard> {
                 ),
               ],
             ),
+            ),
+            ),
             const SizedBox(height: 4),
             Text(
               stage.templatePreset.description,
@@ -327,18 +336,22 @@ class _StageCardState extends ConsumerState<StageCard> {
             const SizedBox(height: 12),
 
             // Template content toolbar
-            Row(
+            IgnorePointer(
+              ignoring: isAutoRecommended,
+              child: Opacity(
+                opacity: isAutoRecommended ? 0.5 : 1.0,
+                child: Row(
               children: [
-                const Text(
-                  '프롬프트 내용',
-                  style: TextStyle(
+                Text(
+                  isAutoRecommended ? '프롬프트 내용 (자동추천됨)' : '프롬프트 내용',
+                  style: const TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
                     color: Color(0xFF334155),
                   ),
                 ),
                 const Spacer(),
-                if (!_isEditing && _templateContent != null)
+                if (!_isEditing && _templateContent != null && !isAutoRecommended)
                   TextButton.icon(
                     onPressed: () {
                       // 편집 시작 → 직접입력 모드로 전환 + 현재 내용 보존
@@ -399,10 +412,13 @@ class _StageCardState extends ConsumerState<StageCard> {
                   ),
               ],
             ),
+            ),
+            ),
             const SizedBox(height: 8),
 
             // Template content
-            Expanded(
+            SizedBox(
+              height: 300,
               child: Container(
                 width: double.infinity,
                 decoration: BoxDecoration(
@@ -481,7 +497,6 @@ class _StageCardState extends ConsumerState<StageCard> {
               ),
             ),
           ],
-        ),
       ),
     );
   }

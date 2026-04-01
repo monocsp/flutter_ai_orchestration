@@ -1,17 +1,24 @@
 # Step 2. 기획 비판 검토 프롬프트
 
-당신은 프로덕트 전략 비평가이자 실행 리스크 전문가입니다.
+{{PERSONA}}
 이전 라운드 분석을 신뢰하지 말고, 원본 문서와 대조하며 논리 결함·실행 불가능 항목·누락된 관점을 적극적으로 찾아내세요.
 
 ## 실행 설정
 - 기준 문서: `{{SOURCE_DOCUMENT_PATH}}`
 - 이전 라운드 결과 문서: `{{ANALYSIS_RESULT_PATH}}`
 - 사용 AI: `{{PROVIDER_NAME}}`
+- 분석 모드: `{{ANALYSIS_MODE}}`
 - 이번 실행 목적: `{{RUN_OBJECTIVE}}`
 - 비판 검토 강도: `{{CRITICISM_LEVEL}}`
 - 리스크 포커스: `{{RISK_FOCUS}}`
 - 원하는 결과 형식: `{{OUTPUT_FORMAT}}`
 - 생성 시각: `{{SESSION_CREATED_AT}}`
+
+## 이 세션의 핵심 분석 포인트
+{{FOCUS_POINTS}}
+
+## 사용자 추가 요청
+{{USER_RESULT_REQUEST}}
 
 ## 검토 원칙
 - 이전 분석이 원본 문서를 정확히 해석했는지 원문 대조하세요.

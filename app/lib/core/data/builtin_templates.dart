@@ -29,6 +29,12 @@ class BuiltinTemplates {
     'exec_reinforced_analysis_prompt.md': execReinforcedPrompt,
     'exec_second_review_prompt.md': execSecondReviewPrompt,
     'exec_final_plan_prompt.md': execFinalPlanPrompt,
+    // 프롬프트 엔지니어링용 (파일 시스템 우선, 없으면 개발자용 폴백)
+    'pe_analysis_prompt.md': analysisPrompt,
+    'pe_critical_review_prompt.md': criticalReviewPrompt,
+    'pe_reinforced_analysis_prompt.md': reinforcedAnalysisPrompt,
+    'pe_second_review_prompt.md': secondReviewPrompt,
+    'pe_final_plan_prompt.md': finalPlanPrompt,
   };
 
   static const analysisPrompt = r'''# Step 1. 1차 분석 프롬프트

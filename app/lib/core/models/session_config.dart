@@ -4,6 +4,7 @@ import 'orchestration_stage.dart';
 
 class SessionConfig {
   final String sourceDocumentPath;
+  final String? sourceDocumentContent;
   final String? projectRootPath;
   final String outputRootPath;
   final AgentProvider analysisAgent;
@@ -15,8 +16,14 @@ class SessionConfig {
   final String riskFocus;
   final String outputFormat;
 
+  final String analysisMode;
+  final String userResultRequest;
+  final String persona;
+  final List<String> focusPoints;
+
   const SessionConfig({
     required this.sourceDocumentPath,
+    this.sourceDocumentContent,
     this.projectRootPath,
     required this.outputRootPath,
     required this.analysisAgent,
@@ -27,6 +34,10 @@ class SessionConfig {
     required this.criticismLevel,
     required this.riskFocus,
     required this.outputFormat,
+    this.analysisMode = 'planning',
+    this.userResultRequest = '',
+    this.persona = '',
+    this.focusPoints = const [],
   });
 
   static const String autoValue = '자동';
@@ -106,21 +117,83 @@ class SessionConfig {
         riskFocus.isEmpty;
   }
 
-  /// AI가 계획서를 보고 설정을 자동 결정하기 위한 프롬프트
+  /// 분석 모드 목록
+  static const Map<String, String> analysisModes = {
+    'code': '코드/기술 분석',
+    'planning': '기획/전략 분석',
+    'executive': '경영진 피드백 분석',
+    'prompt_eng': '프롬프트 엔지니어링 개선',
+    'custom': '직접 설정',
+  };
+
+  /// 분석 모드별 기본 결과 요청 텍스트
+  static const Map<String, String> defaultResultRequests = {
+    'code': '우선순위 보드(표), 작업 항목별 분석(관련 파일, 접근 방식, 리스크), 검증 계획, 다음 작업자가 첫 30분 안에 볼 것을 포함한 실행 계획서를 작성해주세요.',
+    'planning': '바로 착수 가능한 최종 실행 계획서를 작성해주세요. 채택/기각 판단, 실행 항목별 우선순위, 측정 가능한 완료 기준, 이해관계자별 액션 아이템을 포함해주세요.',
+    'executive': '경영진 피드백 분석서를 작성해주세요. 발신자 의도 정리, 긍정/부정 평가 분리, 명시적 지시 vs 암묵적 기대 구분, 기획자가 자체 판단할 영역과 상위 확인이 필요한 영역을 나눠주세요.',
+    'prompt_eng': '최종 개선된 프롬프트 전문을 작성해주세요. Before/After 비교, 각 수정의 근거, 개선 효과 점수표(구조 명확성, 모호성 제거, 할루시네이션 방지, 출력 일관성), 사용 가이드를 포함해주세요.',
+  };
+
+  /// 분석 모드에 따른 기본 설정 (프리셋 포함)
+  static Map<String, String> defaultsForMode(String mode) {
+    switch (mode) {
+      case 'code':
+        return {
+          'templatePreset': 'developer',
+          'runObjective': '비판 검토 포함 실행 계획',
+          'criticismLevel': '높음',
+          'riskFocus': '공통 컴포넌트 영향, 상태 관리, 라이프사이클, 회귀 위험',
+        };
+      case 'planning':
+        return {
+          'templatePreset': 'planner',
+          'runObjective': '기능 기획 검증',
+          'criticismLevel': '높음',
+          'riskFocus': '의도 왜곡, 요구사항 누락, 실행 가능성, 이해관계자 해석 차이, 측정 기준 부재',
+        };
+      case 'executive':
+        return {
+          'templatePreset': 'executive',
+          'runObjective': '경영진 피드백 분석',
+          'criticismLevel': '매우 높음',
+          'riskFocus': '발신자 의도 왜곡, 명시적 지시 vs 암묵적 기대 혼동, 긍정/부정 평가 분리 누락',
+        };
+      case 'prompt_eng':
+        return {
+          'templatePreset': 'promptEng',
+          'runObjective': '비판 검토 포함 실행 계획',
+          'criticismLevel': '매우 높음',
+          'riskFocus': '모호한 지시, 할루시네이션 유발 구조, 누락된 조건, 출력 형식 불명확',
+        };
+      default: // 'custom'
+        return {};
+    }
+  }
+
+  /// AI가 계획서를 보고 설정 + 페르소나 + 집중포인트를 자동 결정하기 위한 프롬프트
   static String buildAutoSettingsPrompt({
     required String documentContent,
     required String runObjective,
     required String criticismLevel,
     required String riskFocus,
     required String outputFormat,
+    required String analysisMode,
+    required String userResultRequest,
   }) {
     final needsObjective = runObjective == autoValue;
     final needsCriticism = criticismLevel == autoValue;
     final needsRisk = riskFocus.isEmpty;
     final needsFormat = outputFormat.isEmpty;
 
+    final modeName = analysisModes[analysisMode] ?? analysisMode;
+
     final buf = StringBuffer();
     buf.writeln('아래 문서를 읽고, 이 문서를 AI 오케스트레이션으로 분석할 때 적합한 설정을 JSON으로 추천하세요.');
+    buf.writeln('');
+    buf.writeln('분석 모드: $modeName');
+    if (userResultRequest.isNotEmpty) {
+      buf.writeln('사용자 추가 요청: $userResultRequest');
+    }
     buf.writeln('');
     buf.writeln('추천해야 할 항목:');
     if (needsObjective) {
@@ -136,6 +209,10 @@ class SessionConfig {
       buf.writeln('- outputFormat: 다음 중 하나 선택 → "간결한 실행 계획", "상세 실행 계획", "리스크 중심 검토서", "QA 체크리스트 포함 결과", "의사결정 로그 포함 결과", "경영진 피드백 분석서", "기획 실행 로드맵"');
     }
     buf.writeln('');
+    buf.writeln('또한 반드시 아래 항목도 포함하세요:');
+    buf.writeln('- persona: 이 문서를 가장 잘 분석할 수 있는 전문가의 페르소나를 작성하세요. 구체적인 전문 분야, 경력, 관점을 포함해야 합니다. 예: "10년차 모바일 UX 전략가이며 감정 기반 서비스의 리텐션 구조에 전문성이 있는 시니어 프로덕트 매니저"');
+    buf.writeln('- focusPoints: 이 문서의 핵심 분석 포인트 3~5개를 배열로 작성하세요. 각 포인트는 구체적인 분석 방향이어야 합니다.');
+    buf.writeln('');
     buf.writeln('각 선택에 대한 이유도 reason 필드에 한 줄로 작성하세요.');
     buf.writeln('');
     buf.writeln('반드시 아래 JSON 형식으로만 응답하세요. 다른 텍스트는 포함하지 마세요:');
@@ -146,6 +223,8 @@ class SessionConfig {
     if (needsCriticism) fields.add('  "criticismLevel": "...", "criticismLevelReason": "..."');
     if (needsRisk) fields.add('  "riskFocus": "...", "riskFocusReason": "..."');
     if (needsFormat) fields.add('  "outputFormat": "...", "outputFormatReason": "..."');
+    fields.add('  "persona": "...", "personaReason": "..."');
+    fields.add('  "focusPoints": ["...", "...", "..."]');
     buf.writeln(fields.join(',\n'));
     buf.writeln('}');
     buf.writeln('```');
@@ -154,5 +233,32 @@ class SessionConfig {
     buf.writeln(documentContent);
 
     return buf.toString();
+  }
+
+  /// 문서 첫 부분을 읽고 분석 모드를 추천하는 경량 프롬프트
+  static String buildModeRecommendPrompt(String documentPreview) {
+    return '''아래 문서의 첫 부분을 읽고, 가장 적합한 분석 모드와 결과 요청을 JSON으로 추천하세요.
+
+기본 선택지:
+- "code": 코드/기술 분석 (버그, 리팩터링, 코드 리뷰 관련 문서)
+- "planning": 기획/전략 분석 (기획서, UX 설계, 기능 요구서)
+- "executive": 경영진 피드백 분석 (경영진/상위자의 피드백, 리뷰)
+- "prompt_eng": 프롬프트 엔지니어링 개선 (AI 프롬프트, 시스템 프롬프트)
+
+위 선택지 중 적합한 것이 있으면 해당 mode를 사용하세요.
+만약 위 선택지에 맞지 않는 특수한 문서라면 "custom"을 사용하고, customModeName에 적합한 분석 모드 이름을 작성하세요.
+
+반드시 아래 JSON 형식으로만 응답하세요:
+```json
+{
+  "mode": "...",
+  "reason": "한 줄 이유",
+  "customModeName": "위 선택지에 없을 때만 작성",
+  "resultRequest": "이 문서의 최종 결과물에 포함되어야 할 내용을 구체적으로 작성 (예: 실행 계획서, 체크리스트, 개선 프롬프트 등)"
+}
+```
+
+--- 문서 미리보기 ---
+$documentPreview''';
   }
 }

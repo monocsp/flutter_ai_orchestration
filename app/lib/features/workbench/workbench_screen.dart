@@ -6,6 +6,7 @@ import '../../core/models/orchestration_thread.dart';
 import '../../core/models/parallel_comparison.dart';
 import '../../providers/session_providers.dart';
 import '../../providers/thread_providers.dart';
+import '../../providers/agent_providers.dart';
 import '../session_setup/session_setup_panel.dart';
 import '../stage_editor/stage_editor_panel.dart';
 import '../documents/documents_panel.dart';
@@ -13,6 +14,7 @@ import '../agent_status/agent_status_bar.dart';
 import '../thread/thread_detail_view.dart';
 import '../parallel/parallel_setup_panel.dart';
 import '../parallel/parallel_result_view.dart';
+import '../onboarding/agent_setup_screen.dart';
 import '../tutorial/tutorial_overlay.dart';
 
 /// Main view mode
@@ -45,6 +47,16 @@ class _WorkbenchScreenState extends ConsumerState<WorkbenchScreen> {
   Widget build(BuildContext context) {
     final currentView = ref.watch(workbenchViewProvider);
     final threadState = ref.watch(threadListProvider);
+    final agentStatus = ref.watch(agentStatusProvider);
+
+    // Agent가 하나도 없으면 온보딩 화면 표시
+    final hasAnyAgent = agentStatus.whenOrNull(
+      data: (statuses) => statuses.any((s) => s.installed),
+    ) ?? true; // 로딩 중에는 일단 true로 (깜빡임 방지)
+
+    if (!hasAnyAgent) {
+      return const AgentSetupScreen();
+    }
 
     return DropTarget(
       onDragDone: (details) {
