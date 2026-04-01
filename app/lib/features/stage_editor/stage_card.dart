@@ -147,8 +147,9 @@ class _StageCardState extends ConsumerState<StageCard> {
   Widget build(BuildContext context) {
     final stage = widget.stage;
     final session = ref.watch(sessionProvider);
-    // 추천 진행 중일 때만 비활성화 (추천 완료 후에는 유저가 수정 가능)
-    final isAutoRecommended = session.isAutoRecommending;
+    // 자동추천 ON이면 비활성화 (수정하려면 자동추천을 끄고 수정)
+    final isAutoRecommended = session.isAutoRecommending ||
+        (session.autoPersona != null && session.autoPersona!.isNotEmpty);
 
     return Card(
       clipBehavior: Clip.hardEdge,
