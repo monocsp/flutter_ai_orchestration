@@ -29,6 +29,12 @@ class _StageCardState extends ConsumerState<StageCard> {
   bool _isCustom = false;
   late TextEditingController _editController;
 
+  /// 모드 자동추천이 활성화되어 있는지
+  bool get _isAutoRecommended {
+    final session = ref.read(sessionProvider);
+    return session.autoPersona != null && session.autoPersona!.isNotEmpty;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -199,13 +205,14 @@ class _StageCardState extends ConsumerState<StageCard> {
                     ],
                   ),
                 ),
-                Switch(
-                  value: stage.enabled,
-                  activeThumbColor: widget.color,
-                  onChanged: (v) {
-                    widget.onChanged(stage.copyWith(enabled: v));
-                  },
-                ),
+                if (!_isAutoRecommended)
+                  Switch(
+                    value: stage.enabled,
+                    activeThumbColor: widget.color,
+                    onChanged: (v) {
+                      widget.onChanged(stage.copyWith(enabled: v));
+                    },
+                  ),
               ],
             ),
 
@@ -266,11 +273,15 @@ class _StageCardState extends ConsumerState<StageCard> {
             const SizedBox(height: 16),
 
             // 프롬프트 프리셋 선택
-            Row(
+            IgnorePointer(
+              ignoring: _isAutoRecommended,
+              child: Opacity(
+                opacity: _isAutoRecommended ? 0.5 : 1.0,
+                child: Row(
               children: [
-                const Text(
-                  '프롬프트 유형',
-                  style: TextStyle(
+                Text(
+                  _isAutoRecommended ? '프롬프트 유형 (자동추천됨)' : '프롬프트 유형',
+                  style: const TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
                     color: Color(0xFF334155),
@@ -324,6 +335,8 @@ class _StageCardState extends ConsumerState<StageCard> {
                   ),
                 ),
               ],
+            ),
+            ),
             ),
             const SizedBox(height: 4),
             Text(

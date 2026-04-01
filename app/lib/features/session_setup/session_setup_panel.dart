@@ -690,10 +690,17 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
       final parsed = jsonDecode(jsonMatch.group(0)!) as Map<String, dynamic>;
       final mode = parsed['mode'] as String?;
       final reason = parsed['reason'] as String?;
+      final resultRequest = parsed['resultRequest'] as String?;
 
       if (mode != null) {
         final notifier = ref.read(sessionProvider.notifier);
         final customModeName = parsed['customModeName'] as String?;
+
+        // 결과 요청 자동 채우기
+        if (resultRequest != null && resultRequest.isNotEmpty) {
+          StartPanelController.userRequestController.text = resultRequest;
+          notifier.setUserResultRequest(resultRequest);
+        }
 
         if (SessionConfig.analysisModes.containsKey(mode)) {
           // 기존 모드에 있는 경우

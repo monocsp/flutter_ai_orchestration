@@ -235,7 +235,7 @@ class SessionConfig {
 
   /// 문서 첫 부분을 읽고 분석 모드를 추천하는 경량 프롬프트
   static String buildModeRecommendPrompt(String documentPreview) {
-    return '''아래 문서의 첫 부분을 읽고, 가장 적합한 분석 모드를 JSON으로 추천하세요.
+    return '''아래 문서의 첫 부분을 읽고, 가장 적합한 분석 모드와 결과 요청을 JSON으로 추천하세요.
 
 기본 선택지:
 - "code": 코드/기술 분석 (버그, 리팩터링, 코드 리뷰 관련 문서)
@@ -248,7 +248,12 @@ class SessionConfig {
 
 반드시 아래 JSON 형식으로만 응답하세요:
 ```json
-{"mode": "...", "reason": "한 줄 이유", "customModeName": "위 선택지에 없을 때만 작성"}
+{
+  "mode": "...",
+  "reason": "한 줄 이유",
+  "customModeName": "위 선택지에 없을 때만 작성",
+  "resultRequest": "이 문서의 최종 결과물에 포함되어야 할 내용을 구체적으로 작성 (예: 실행 계획서, 체크리스트, 개선 프롬프트 등)"
+}
 ```
 
 --- 문서 미리보기 ---
