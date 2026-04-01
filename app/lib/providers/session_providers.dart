@@ -90,6 +90,7 @@ class SessionState {
   final String outputFormat;
   final String userResultRequest; // 유저가 원하는 결과 요청
   final String? autoPersona; // AI가 자동 생성한 페르소나
+  final bool isAutoRecommending; // 모드 자동추천 진행 중
   final List<String>? autoFocusPoints; // AI가 자동 생성한 집중 포인트
   final List<String> importedFiles;
   final SessionArtifact? lastArtifact;
@@ -111,6 +112,7 @@ class SessionState {
     this.outputFormat = '',
     this.userResultRequest = '',
     this.autoPersona,
+    this.isAutoRecommending = false,
     this.autoFocusPoints,
     this.importedFiles = const [],
     this.lastArtifact,
@@ -138,6 +140,7 @@ class SessionState {
     String? outputFormat,
     String? userResultRequest,
     String? autoPersona,
+    bool? isAutoRecommending,
     List<String>? autoFocusPoints,
     List<String>? importedFiles,
     SessionArtifact? lastArtifact,
@@ -160,6 +163,7 @@ class SessionState {
       outputFormat: outputFormat ?? this.outputFormat,
       userResultRequest: userResultRequest ?? this.userResultRequest,
       autoPersona: autoPersona ?? this.autoPersona,
+      isAutoRecommending: isAutoRecommending ?? this.isAutoRecommending,
       autoFocusPoints: autoFocusPoints ?? this.autoFocusPoints,
       importedFiles: importedFiles ?? this.importedFiles,
       lastArtifact: lastArtifact ?? this.lastArtifact,
@@ -221,6 +225,10 @@ class SessionNotifier extends Notifier<SessionState> {
 
   void setAutoPersona(String persona) {
     state = state.copyWith(autoPersona: persona);
+  }
+
+  void setIsAutoRecommending(bool value) {
+    state = state.copyWith(isAutoRecommending: value);
   }
 
   void setAutoFocusPoints(List<String> points) {

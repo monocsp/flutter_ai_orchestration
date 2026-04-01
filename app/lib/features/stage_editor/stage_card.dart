@@ -29,10 +29,11 @@ class _StageCardState extends ConsumerState<StageCard> {
   bool _isCustom = false;
   late TextEditingController _editController;
 
-  /// 모드 자동추천이 활성화되어 있는지
+  /// 모드 자동추천이 활성화(완료 또는 진행 중)되어 있는지
   bool get _isAutoRecommended {
     final session = ref.read(sessionProvider);
-    return session.autoPersona != null && session.autoPersona!.isNotEmpty;
+    return session.isAutoRecommending ||
+        (session.autoPersona != null && session.autoPersona!.isNotEmpty);
   }
 
   @override

@@ -636,6 +636,13 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
     setState(() => _isConverting = false);
   }
 
+  void _setRecommending(bool value) {
+    if (mounted) {
+      setState(() => _isRecommending = value);
+      ref.read(sessionProvider.notifier).setIsAutoRecommending(value);
+    }
+  }
+
   /// 문서 업로드 후 설치된 Agent로 분석 모드를 자동 추천
   Future<void> _tryAutoRecommendMode() async {
     if (!_autoRecommendEnabled) return;
@@ -645,8 +652,8 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
     debugPrint('[MODE_RECOMMEND] content length: ${content?.length ?? 0}');
     if (content == null || content.isEmpty) return;
 
+    _setRecommending(true);
     setState(() {
-      _isRecommending = true;
       _modeRecommendation = null;
     });
 
@@ -664,7 +671,7 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
 
     debugPrint('[MODE_RECOMMEND] available agent: $availableAgent');
     if (availableAgent == null) {
-      if (mounted) setState(() => _isRecommending = false);
+      _setRecommending(false);
       return;
     }
 
@@ -678,7 +685,7 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
 
     debugPrint('[MODE_RECOMMEND] success: ${result.success}, output: ${result.output.length} chars');
     if (!mounted || !result.success) {
-      if (mounted) setState(() => _isRecommending = false);
+      _setRecommending(false);
       return;
     }
 
@@ -724,9 +731,9 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
           StartPanelController.updateForMode(mode);
           notifier.setAutoPersona('UI에서 자동추천 완료: ${SessionConfig.analysisModes[mode]}');
 
+          _setRecommending(false);
           if (mounted) {
             setState(() {
-              _isRecommending = false;
               _modeRecommendation = '자동추천되었습니다: ${SessionConfig.analysisModes[mode]}${reason != null ? ' - $reason' : ''}';
             });
           }
@@ -736,19 +743,19 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
           final displayName = customModeName ?? mode;
           notifier.setAutoPersona('UI에서 자동추천 완료 (커스텀): $displayName');
 
+          _setRecommending(false);
           if (mounted) {
             setState(() {
-              _isRecommending = false;
               _showAdvanced = true;
               _modeRecommendation = '자동추천되었습니다: $displayName (직접 설정 모드)${reason != null ? ' - $reason' : ''}';
             });
           }
         }
       } else {
-        if (mounted) setState(() => _isRecommending = false);
+        _setRecommending(false);
       }
     } catch (_) {
-      if (mounted) setState(() => _isRecommending = false);
+      _setRecommending(false);
     }
   }
 
