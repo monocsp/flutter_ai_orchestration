@@ -522,7 +522,7 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
     }
 
     if (FileConverterService.isTextFormat(path)) {
-      ref.read(sessionProvider.notifier).setSourceDocument(path);
+      await ref.read(sessionProvider.notifier).setSourceDocument(path);
       _tryAutoRecommendMode();
       return;
     }
