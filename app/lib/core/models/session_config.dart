@@ -237,15 +237,18 @@ class SessionConfig {
   static String buildModeRecommendPrompt(String documentPreview) {
     return '''아래 문서의 첫 부분을 읽고, 가장 적합한 분석 모드를 JSON으로 추천하세요.
 
-선택지:
+기본 선택지:
 - "code": 코드/기술 분석 (버그, 리팩터링, 코드 리뷰 관련 문서)
 - "planning": 기획/전략 분석 (기획서, UX 설계, 기능 요구서)
 - "executive": 경영진 피드백 분석 (경영진/상위자의 피드백, 리뷰)
 - "prompt_eng": 프롬프트 엔지니어링 개선 (AI 프롬프트, 시스템 프롬프트)
 
+위 선택지 중 적합한 것이 있으면 해당 mode를 사용하세요.
+만약 위 선택지에 맞지 않는 특수한 문서라면 "custom"을 사용하고, customModeName에 적합한 분석 모드 이름을 작성하세요.
+
 반드시 아래 JSON 형식으로만 응답하세요:
 ```json
-{"mode": "...", "reason": "한 줄 이유"}
+{"mode": "...", "reason": "한 줄 이유", "customModeName": "위 선택지에 없을 때만 작성"}
 ```
 
 --- 문서 미리보기 ---

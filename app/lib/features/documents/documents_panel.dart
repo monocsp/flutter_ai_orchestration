@@ -359,6 +359,16 @@ class _DocumentsPanelState extends ConsumerState<DocumentsPanel>
                   : () async {
                       setState(() => _isStarting = true);
                       try {
+                        // 모드 자동추천 안내
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('모드 자동추천한 설정으로 오케스트레이션이 시작됩니다'),
+                              behavior: SnackBarBehavior.floating,
+                              duration: Duration(seconds: 2),
+                            ),
+                          );
+                        }
                         ref.read(workbenchViewProvider.notifier).setView(WorkbenchView.thread);
                         ref.read(threadListProvider.notifier).startOrchestration();
                       } catch (e) {

@@ -32,7 +32,10 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
   String _outputFormatMode = '직접입력';
   String? _fileError;
   bool _isConverting = false;
-  String? _modeRecommendation; // AI 추천 모드 안내 메시지
+  bool _autoRecommendEnabled = true;
+  bool _isRecommending = false;
+  String? _modeRecommendation;
+  String? _lastRecommendedDocPath; // 이미 추천한 파일 추적
 
   @override
   void initState() {
@@ -51,6 +54,15 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
   Widget build(BuildContext context) {
     final session = ref.watch(sessionProvider);
     final agentStatus = ref.watch(agentStatusProvider);
+
+    // 파일이 변경되면 자동 추천 트리거 (드래그앤드롭 포함)
+    if (session.sourceDocumentPath != null &&
+        session.sourceDocumentPath != _lastRecommendedDocPath &&
+        _autoRecommendEnabled &&
+        !_isRecommending) {
+      _lastRecommendedDocPath = session.sourceDocumentPath;
+      Future.microtask(() => _tryAutoRecommendMode());
+    }
 
     return Column(
       children: [
@@ -132,14 +144,60 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
                   ),
                 ),
 
-              const SizedBox(height: 20),
-              const Divider(),
-              const SizedBox(height: 12),
+              // 모드 자동추천 체크박스
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 20, height: 20,
+                      child: Checkbox(
+                        value: _autoRecommendEnabled,
+                        onChanged: _isRecommending
+                            ? null // 추천 진행 중에는 끌 수 없음
+                            : (v) => setState(() => _autoRecommendEnabled = v ?? true),
+                        activeColor: const Color(0xFF0D9488),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      '모드 자동추천',
+                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600, fontWeight: FontWeight.w500),
+                    ),
+                  ],
+                ),
+              ),
 
-              // AI 모드 추천 안내
-              if (_modeRecommendation != null)
+              // 추천 진행 중 배너
+              if (_isRecommending)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF0F9FF),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFBAE6FD)),
+                    ),
+                    child: Row(
+                      children: [
+                        SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.blue.shade400)),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            '문서를 분석하여 최적의 모드를 추천하고 있습니다...\n추천 완료 전에도 오케스트레이션을 시작할 수 있습니다.',
+                            style: TextStyle(fontSize: 11, color: Colors.blue.shade700, height: 1.4),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+              // 자동추천 결과 배너
+              if (_modeRecommendation != null && !_isRecommending)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     decoration: BoxDecoration(
@@ -149,7 +207,7 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
                     ),
                     child: Row(
                       children: [
-                        Icon(Icons.auto_awesome, size: 14, color: Colors.green.shade600),
+                        Icon(Icons.check_circle, size: 14, color: Colors.green.shade600),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
@@ -162,48 +220,62 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
                   ),
                 ),
 
-              // Analysis Mode
-              _sectionTitle(context, '분석 모드'),
-              const SizedBox(height: 8),
-              _buildAnalysisModeSelector(session.analysisMode),
-
-              const SizedBox(height: 16),
-
-              // Agent selection + Criticism level (always visible)
-              _fieldLabel(context, '분석 Agent (${_analysisStepLabel(session.stages)})'),
-              const SizedBox(height: 4),
-              _agentDropdown(
-                context,
-                value: session.analysisAgent,
-                agentStatus: agentStatus,
-                onChanged: (a) {
-                  if (a != null) ref.read(sessionProvider.notifier).setAnalysisAgent(a);
-                },
-              ),
+              const SizedBox(height: 20),
+              const Divider(),
               const SizedBox(height: 12),
 
-              _fieldLabel(context, '검토 Agent (${_critiqueStepLabel(session.stages)})'),
-              const SizedBox(height: 4),
-              _agentDropdown(
-                context,
-                value: session.criticAgent,
-                agentStatus: agentStatus,
-                onChanged: (a) {
-                  if (a != null) ref.read(sessionProvider.notifier).setCriticAgent(a);
-                },
-              ),
-              const SizedBox(height: 12),
+              // Analysis Mode (자동추천 시 비활성화)
+              IgnorePointer(
+                ignoring: _autoRecommendEnabled,
+                child: Opacity(
+                  opacity: _autoRecommendEnabled ? 0.5 : 1.0,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _sectionTitle(context, _autoRecommendEnabled ? '분석 모드 (자동추천됨)' : '분석 모드'),
+                      const SizedBox(height: 8),
+                      _buildAnalysisModeSelector(session.analysisMode),
 
-              _fieldLabel(context, '비판 강도'),
-              const SizedBox(height: 4),
-              _dropdown<String>(
-                context,
-                value: session.criticismLevel,
-                items: SessionConfig.criticismLevels,
-                labelOf: (s) => s,
-                onChanged: (v) {
-                  if (v != null) ref.read(sessionProvider.notifier).setCriticismLevel(v);
-                },
+                      const SizedBox(height: 16),
+
+                      _fieldLabel(context, '분석 Agent (${_analysisStepLabel(session.stages)})'),
+                      const SizedBox(height: 4),
+                      _agentDropdown(
+                        context,
+                        value: session.analysisAgent,
+                        agentStatus: agentStatus,
+                        onChanged: (a) {
+                          if (a != null) ref.read(sessionProvider.notifier).setAnalysisAgent(a);
+                        },
+                      ),
+                      const SizedBox(height: 12),
+
+                      _fieldLabel(context, '검토 Agent (${_critiqueStepLabel(session.stages)})'),
+                      const SizedBox(height: 4),
+                      _agentDropdown(
+                        context,
+                        value: session.criticAgent,
+                        agentStatus: agentStatus,
+                        onChanged: (a) {
+                          if (a != null) ref.read(sessionProvider.notifier).setCriticAgent(a);
+                        },
+                      ),
+                      const SizedBox(height: 12),
+
+                      _fieldLabel(context, '비판 강도'),
+                      const SizedBox(height: 4),
+                      _dropdown<String>(
+                        context,
+                        value: session.criticismLevel,
+                        items: SessionConfig.criticismLevels,
+                        labelOf: (s) => s,
+                        onChanged: (v) {
+                          if (v != null) ref.read(sessionProvider.notifier).setCriticismLevel(v);
+                        },
+                      ),
+                    ],
+                  ),
+                ),
               ),
 
               const SizedBox(height: 16),
@@ -523,7 +595,6 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
 
     if (FileConverterService.isTextFormat(path)) {
       await ref.read(sessionProvider.notifier).setSourceDocument(path);
-      _tryAutoRecommendMode();
       return;
     }
 
@@ -546,7 +617,6 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
       await File(mdPath).writeAsString(convertResult.content!);
 
       ref.read(sessionProvider.notifier).setSourceDocument(mdPath);
-      _tryAutoRecommendMode();
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -568,9 +638,17 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
 
   /// 문서 업로드 후 설치된 Agent로 분석 모드를 자동 추천
   Future<void> _tryAutoRecommendMode() async {
+    if (!_autoRecommendEnabled) return;
+
     final session = ref.read(sessionProvider);
     final content = session.sourceDocumentContent;
+    debugPrint('[MODE_RECOMMEND] content length: ${content?.length ?? 0}');
     if (content == null || content.isEmpty) return;
+
+    setState(() {
+      _isRecommending = true;
+      _modeRecommendation = null;
+    });
 
     // 설치된 Agent 찾기
     final detection = AgentDetectionService();
@@ -584,16 +662,25 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
       }
     }
 
-    if (availableAgent == null) return; // Agent 없으면 추천 안 함
+    debugPrint('[MODE_RECOMMEND] available agent: $availableAgent');
+    if (availableAgent == null) {
+      if (mounted) setState(() => _isRecommending = false);
+      return;
+    }
 
     // 문서 첫 500자로 경량 추천
     final preview = content.length > 500 ? content.substring(0, 500) : content;
     final prompt = SessionConfig.buildModeRecommendPrompt(preview);
 
+    debugPrint('[MODE_RECOMMEND] calling $availableAgent...');
     final runner = AgentRunnerService();
     final result = await runner.run(agentId: availableAgent, promptContent: prompt);
 
-    if (!mounted || !result.success) return;
+    debugPrint('[MODE_RECOMMEND] success: ${result.success}, output: ${result.output.length} chars');
+    if (!mounted || !result.success) {
+      if (mounted) setState(() => _isRecommending = false);
+      return;
+    }
 
     try {
       final output = result.output;
@@ -604,37 +691,57 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
       final mode = parsed['mode'] as String?;
       final reason = parsed['reason'] as String?;
 
-      if (mode != null && SessionConfig.analysisModes.containsKey(mode)) {
+      if (mode != null) {
         final notifier = ref.read(sessionProvider.notifier);
-        notifier.setAnalysisMode(mode);
+        final customModeName = parsed['customModeName'] as String?;
 
-        // 모드에 따른 설정 연동
-        final defaults = SessionConfig.defaultsForMode(mode);
-        if (defaults.containsKey('templatePreset')) {
-          final preset = TemplatePreset.values.firstWhere(
-            (p) => p.name == defaults['templatePreset'],
-            orElse: () => TemplatePreset.developer,
-          );
-          notifier.setStageTemplatePreset(0, preset, cascadeFromFirst: true);
-        }
-        if (defaults.containsKey('runObjective')) notifier.setRunObjective(defaults['runObjective']!);
-        if (defaults.containsKey('criticismLevel')) notifier.setCriticismLevel(defaults['criticismLevel']!);
-        if (defaults.containsKey('riskFocus')) {
-          _riskController.text = defaults['riskFocus']!;
-          notifier.setRiskFocus(defaults['riskFocus']!);
-        }
+        if (SessionConfig.analysisModes.containsKey(mode)) {
+          // 기존 모드에 있는 경우
+          notifier.setAnalysisMode(mode);
 
-        // 기본 결과 요청 채우기
-        StartPanelController.updateForMode(mode);
+          final defaults = SessionConfig.defaultsForMode(mode);
+          if (defaults.containsKey('templatePreset')) {
+            final preset = TemplatePreset.values.firstWhere(
+              (p) => p.name == defaults['templatePreset'],
+              orElse: () => TemplatePreset.developer,
+            );
+            notifier.setStageTemplatePreset(0, preset, cascadeFromFirst: true);
+          }
+          if (defaults.containsKey('runObjective')) notifier.setRunObjective(defaults['runObjective']!);
+          if (defaults.containsKey('criticismLevel')) notifier.setCriticismLevel(defaults['criticismLevel']!);
+          if (defaults.containsKey('riskFocus')) {
+            _riskController.text = defaults['riskFocus']!;
+            notifier.setRiskFocus(defaults['riskFocus']!);
+          }
 
-        if (mounted) {
-          setState(() {
-            _modeRecommendation = '${SessionConfig.analysisModes[mode]} 모드를 추천합니다${reason != null ? ': $reason' : ''}';
-          });
+          StartPanelController.updateForMode(mode);
+          notifier.setAutoPersona('UI에서 자동추천 완료: ${SessionConfig.analysisModes[mode]}');
+
+          if (mounted) {
+            setState(() {
+              _isRecommending = false;
+              _modeRecommendation = '자동추천되었습니다: ${SessionConfig.analysisModes[mode]}${reason != null ? ' - $reason' : ''}';
+            });
+          }
+        } else {
+          // 기존 모드에 없는 경우 → 직접 설정으로 전환
+          notifier.setAnalysisMode('custom');
+          final displayName = customModeName ?? mode;
+          notifier.setAutoPersona('UI에서 자동추천 완료 (커스텀): $displayName');
+
+          if (mounted) {
+            setState(() {
+              _isRecommending = false;
+              _showAdvanced = true;
+              _modeRecommendation = '자동추천되었습니다: $displayName (직접 설정 모드)${reason != null ? ' - $reason' : ''}';
+            });
+          }
         }
+      } else {
+        if (mounted) setState(() => _isRecommending = false);
       }
     } catch (_) {
-      // 파싱 실패 시 무시
+      if (mounted) setState(() => _isRecommending = false);
     }
   }
 
