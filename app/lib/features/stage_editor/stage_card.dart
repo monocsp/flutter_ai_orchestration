@@ -148,12 +148,10 @@ class _StageCardState extends ConsumerState<StageCard> {
     final stage = widget.stage;
 
     return Card(
-      child: Padding(
+      clipBehavior: Clip.hardEdge,
+      child: ListView(
         padding: const EdgeInsets.all(20),
-        child: SingleChildScrollView(
-          child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+        children: [
             // Header row
             Row(
               children: [
@@ -404,7 +402,8 @@ class _StageCardState extends ConsumerState<StageCard> {
             const SizedBox(height: 8),
 
             // Template content
-            Expanded(
+            SizedBox(
+              height: 300,
               child: Container(
                 width: double.infinity,
                 decoration: BoxDecoration(
@@ -483,8 +482,6 @@ class _StageCardState extends ConsumerState<StageCard> {
               ),
             ),
           ],
-        ),
-        ),
       ),
     );
   }
