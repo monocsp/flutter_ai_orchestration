@@ -719,6 +719,21 @@ class ThreadListNotifier extends Notifier<ThreadListState> {
         }
       }
 
+      // 이전 단계 결과를 프롬프트에 첨부
+      if (promptContent != null && artifactIdx > 0) {
+        final prevResults = StringBuffer();
+        for (var j = stageStartIndex; j < i; j++) {
+          final prevStage = currentThread.stages[j];
+          if (prevStage.status == ThreadStatus.completed && prevStage.resultContent != null) {
+            prevResults.writeln('\n\n---\n\n## 이전 단계 결과: ${prevStage.name}\n');
+            prevResults.writeln(prevStage.resultContent);
+          }
+        }
+        if (prevResults.isNotEmpty) {
+          promptContent = '$promptContent${prevResults.toString()}';
+        }
+      }
+
       // AI 담당 agent 결정
       final originalStage = enabledStages[artifactIdx];
       final agentId = originalStage.role == StageRole.analysis

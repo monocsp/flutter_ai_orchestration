@@ -292,6 +292,7 @@ class SessionNotifier extends Notifier<SessionState> {
       final builder = ref.read(sessionBuilderProvider);
       final config = SessionConfig(
         sourceDocumentPath: state.sourceDocumentPath!,
+        sourceDocumentContent: state.sourceDocumentContent,
         projectRootPath: state.projectRootPath,
         outputRootPath: state.outputRootPath,
         analysisAgent: state.analysisAgent,

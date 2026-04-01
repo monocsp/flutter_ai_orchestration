@@ -4,6 +4,7 @@ import 'orchestration_stage.dart';
 
 class SessionConfig {
   final String sourceDocumentPath;
+  final String? sourceDocumentContent;
   final String? projectRootPath;
   final String outputRootPath;
   final AgentProvider analysisAgent;
@@ -22,6 +23,7 @@ class SessionConfig {
 
   const SessionConfig({
     required this.sourceDocumentPath,
+    this.sourceDocumentContent,
     this.projectRootPath,
     required this.outputRootPath,
     required this.analysisAgent,
