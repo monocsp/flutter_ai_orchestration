@@ -91,6 +91,7 @@ class SessionState {
   final String userResultRequest; // 유저가 원하는 결과 요청
   final String? autoPersona; // AI가 자동 생성한 페르소나
   final bool isAutoRecommending; // 모드 자동추천 진행 중
+  final bool autoRecommendEnabled; // 모드 자동추천 체크박스 ON/OFF
   final List<String>? autoFocusPoints; // AI가 자동 생성한 집중 포인트
   final List<String> importedFiles;
   final SessionArtifact? lastArtifact;
@@ -113,6 +114,7 @@ class SessionState {
     this.userResultRequest = '',
     this.autoPersona,
     this.isAutoRecommending = false,
+    this.autoRecommendEnabled = true,
     this.autoFocusPoints,
     this.importedFiles = const [],
     this.lastArtifact,
@@ -141,6 +143,7 @@ class SessionState {
     String? userResultRequest,
     String? autoPersona,
     bool? isAutoRecommending,
+    bool? autoRecommendEnabled,
     List<String>? autoFocusPoints,
     List<String>? importedFiles,
     SessionArtifact? lastArtifact,
@@ -164,6 +167,7 @@ class SessionState {
       userResultRequest: userResultRequest ?? this.userResultRequest,
       autoPersona: autoPersona ?? this.autoPersona,
       isAutoRecommending: isAutoRecommending ?? this.isAutoRecommending,
+      autoRecommendEnabled: autoRecommendEnabled ?? this.autoRecommendEnabled,
       autoFocusPoints: autoFocusPoints ?? this.autoFocusPoints,
       importedFiles: importedFiles ?? this.importedFiles,
       lastArtifact: lastArtifact ?? this.lastArtifact,
@@ -229,6 +233,10 @@ class SessionNotifier extends Notifier<SessionState> {
 
   void setIsAutoRecommending(bool value) {
     state = state.copyWith(isAutoRecommending: value);
+  }
+
+  void setAutoRecommendEnabled(bool value) {
+    state = state.copyWith(autoRecommendEnabled: value);
   }
 
   void setAutoFocusPoints(List<String> points) {
