@@ -4,12 +4,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
 import '../../core/models/agent_provider.dart';
 import '../../core/models/orchestration_preset.dart';
+import '../../core/models/orchestration_stage.dart';
 import '../../core/models/session_config.dart';
+import '../../core/models/template_preset.dart';
+import '../../core/services/file_converter_service.dart';
 import '../../providers/session_providers.dart';
 import '../../providers/agent_providers.dart';
-import '../../providers/thread_providers.dart';
 import '../../core/services/sample_template_service.dart';
-import '../workbench/workbench_screen.dart';
+import '../documents/documents_panel.dart';
 
 class SessionSetupPanel extends ConsumerStatefulWidget {
   const SessionSetupPanel({super.key});
@@ -20,28 +22,22 @@ class SessionSetupPanel extends ConsumerStatefulWidget {
 
 class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
   final _titleController = TextEditingController();
-  final _userRequestController = TextEditingController();
   final _riskController = TextEditingController();
   final _outputFormatController = TextEditingController();
-  bool _isStarting = false;
   bool _showAdvanced = false;
   bool _riskManuallyEdited = false;
   String _outputFormatMode = '직접입력';
+  String? _fileError;
+  bool _isConverting = false;
 
   @override
   void initState() {
     super.initState();
-    final session = ref.read(sessionProvider);
-    _userRequestController.text = session.userResultRequest;
-    _userRequestController.addListener(() {
-      ref.read(sessionProvider.notifier).setUserResultRequest(_userRequestController.text);
-    });
   }
 
   @override
   void dispose() {
     _titleController.dispose();
-    _userRequestController.dispose();
     _riskController.dispose();
     _outputFormatController.dispose();
     super.dispose();
@@ -52,189 +48,144 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
     final session = ref.watch(sessionProvider);
     final agentStatus = ref.watch(agentStatusProvider);
 
-    return ListView(
-      padding: const EdgeInsets.all(16),
+    return Column(
       children: [
-        // Title
-        _fieldLabel(context, '오케스트레이션 제목'),
-        const SizedBox(height: 4),
-        TextField(
-          controller: _titleController,
-          style: const TextStyle(fontSize: 13),
-          decoration: InputDecoration(
-            hintText: '비워두면 자동 번호 부여',
-            hintStyle: TextStyle(fontSize: 12, color: Colors.grey.shade400),
-          ),
-        ),
-        const SizedBox(height: 16),
-
-        // Document upload
-        _sectionTitle(context, '계획서'),
-        const SizedBox(height: 8),
-        _buildDocArea(context, session),
-        if (session.sourceDocumentPath == null)
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () async {
-                  final path = await SampleTemplateService.createSampleFile(
-                    session.outputRootPath,
-                  );
-                  ref.read(sessionProvider.notifier).setSourceDocument(path);
-                },
-                icon: Icon(Icons.auto_awesome, size: 16, color: Colors.amber.shade700),
-                label: const Text('기본 템플릿으로 시작'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFF334155),
-                  side: BorderSide(color: Colors.amber.shade300),
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                  textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+        // 스크롤 영역: 설정들
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              // Title
+              _fieldLabel(context, '오케스트레이션 제목'),
+              const SizedBox(height: 4),
+              TextField(
+                controller: _titleController,
+                style: const TextStyle(fontSize: 13),
+                decoration: InputDecoration(
+                  hintText: '비워두면 자동 번호 부여',
+                  hintStyle: TextStyle(fontSize: 12, color: Colors.grey.shade400),
                 ),
               ),
-            ),
-          ),
+              const SizedBox(height: 16),
 
-        const SizedBox(height: 20),
-        const Divider(),
-        const SizedBox(height: 12),
-
-        // Analysis Mode
-        _sectionTitle(context, '분석 모드'),
-        const SizedBox(height: 8),
-        _buildAnalysisModeSelector(session.analysisMode),
-
-        const SizedBox(height: 16),
-
-        // Agent selection + Criticism level (always visible)
-        _fieldLabel(context, '분석 Agent (Step 1, 3, 5)'),
-        const SizedBox(height: 4),
-        _agentDropdown(
-          context,
-          value: session.analysisAgent,
-          agentStatus: agentStatus,
-          onChanged: (a) {
-            if (a != null) ref.read(sessionProvider.notifier).setAnalysisAgent(a);
-          },
-        ),
-        const SizedBox(height: 12),
-
-        _fieldLabel(context, '검토 Agent (Step 2, 4)'),
-        const SizedBox(height: 4),
-        _agentDropdown(
-          context,
-          value: session.criticAgent,
-          agentStatus: agentStatus,
-          onChanged: (a) {
-            if (a != null) ref.read(sessionProvider.notifier).setCriticAgent(a);
-          },
-        ),
-        const SizedBox(height: 12),
-
-        _fieldLabel(context, '비판 강도'),
-        const SizedBox(height: 4),
-        _dropdown<String>(
-          context,
-          value: session.criticismLevel,
-          items: SessionConfig.criticismLevels,
-          labelOf: (s) => s,
-          onChanged: (v) {
-            if (v != null) ref.read(sessionProvider.notifier).setCriticismLevel(v);
-          },
-        ),
-
-        const SizedBox(height: 20),
-        const Divider(),
-        const SizedBox(height: 12),
-
-        // User result request
-        _sectionTitle(context, '원하는 결과 요청'),
-        const SizedBox(height: 4),
-        Text(
-          'AI에게 추가로 요청하고 싶은 사항을 자유롭게 작성하세요.',
-          style: TextStyle(fontSize: 11, color: Colors.grey.shade400),
-        ),
-        const SizedBox(height: 8),
-        Container(
-          height: 80,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
-          ),
-          child: TextField(
-            controller: _userRequestController,
-            maxLines: null,
-            expands: true,
-            style: const TextStyle(
-              fontSize: 12,
-              color: Color(0xFF334155),
-              height: 1.5,
-            ),
-            decoration: InputDecoration(
-              border: InputBorder.none,
-              contentPadding: const EdgeInsets.all(12),
-              hintText: '예: 체크리스트 형태로 정리해주세요, 표보다 불릿 선호',
-              hintStyle: TextStyle(fontSize: 11, color: Colors.grey.shade400),
-            ),
-          ),
-        ),
-
-        const SizedBox(height: 16),
-
-        // Advanced settings (accordion)
-        _buildAdvancedSettings(session),
-
-        const SizedBox(height: 16),
-
-        // Estimated time
-        _estimatedTimeInfo(session.stages.where((s) => s.enabled).length),
-
-        const SizedBox(height: 12),
-
-        // Start button
-        SizedBox(
-          width: double.infinity,
-          height: 44,
-          child: ElevatedButton.icon(
-            onPressed: session.sourceDocumentPath == null ||
-                    session.isGenerating ||
-                    _isStarting
-                ? null
-                : () async {
-                    setState(() => _isStarting = true);
-                    try {
-                      final title = _titleController.text;
-                      ref.read(workbenchViewProvider.notifier).setView(WorkbenchView.thread);
-                      _titleController.clear();
-                      ref.read(threadListProvider.notifier)
-                          .startOrchestration(customTitle: title);
-                    } catch (e) {
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('오류: $e'),
-                            backgroundColor: Colors.red.shade700,
-                            behavior: SnackBarBehavior.floating,
-                          ),
+              // Document upload
+              _sectionTitle(context, '계획서'),
+              const SizedBox(height: 8),
+              _buildDocArea(context, session),
+              if (session.sourceDocumentPath == null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () async {
+                        final path = await SampleTemplateService.createSampleFile(
+                          session.outputRootPath,
                         );
-                      }
-                    } finally {
-                      await Future.delayed(const Duration(seconds: 3));
-                      if (mounted) setState(() => _isStarting = false);
-                    }
-                  },
-            icon: _isStarting || session.isGenerating
-                ? const SizedBox(
-                    width: 18, height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                  )
-                : const Icon(Icons.play_arrow_rounded, size: 20),
-            label: Text(_isStarting || session.isGenerating ? '시작 중...' : '오케스트레이션 시작'),
+                        ref.read(sessionProvider.notifier).setSourceDocument(path);
+                      },
+                      icon: Icon(Icons.auto_awesome, size: 16, color: Colors.amber.shade700),
+                      label: const Text('기본 템플릿으로 시작'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF334155),
+                        side: BorderSide(color: Colors.amber.shade300),
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ),
+                ),
+
+              // 변환 중 표시
+              if (_isConverting)
+                const Padding(
+                  padding: EdgeInsets.only(top: 8),
+                  child: Row(
+                    children: [
+                      SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
+                      SizedBox(width: 8),
+                      Text('파일 변환 중...', style: TextStyle(fontSize: 12, color: Color(0xFF0D9488))),
+                    ],
+                  ),
+                ),
+
+              // 에러 메시지
+              if (_fileError != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFEF2F2),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFFECACA)),
+                    ),
+                    child: Text(
+                      _fileError!,
+                      style: const TextStyle(fontSize: 11, color: Color(0xFFDC2626), height: 1.4),
+                    ),
+                  ),
+                ),
+
+              const SizedBox(height: 20),
+              const Divider(),
+              const SizedBox(height: 12),
+
+              // Analysis Mode
+              _sectionTitle(context, '분석 모드'),
+              const SizedBox(height: 8),
+              _buildAnalysisModeSelector(session.analysisMode),
+
+              const SizedBox(height: 16),
+
+              // Agent selection + Criticism level (always visible)
+              _fieldLabel(context, '분석 Agent (${_analysisStepLabel(session.stages)})'),
+              const SizedBox(height: 4),
+              _agentDropdown(
+                context,
+                value: session.analysisAgent,
+                agentStatus: agentStatus,
+                onChanged: (a) {
+                  if (a != null) ref.read(sessionProvider.notifier).setAnalysisAgent(a);
+                },
+              ),
+              const SizedBox(height: 12),
+
+              _fieldLabel(context, '검토 Agent (${_critiqueStepLabel(session.stages)})'),
+              const SizedBox(height: 4),
+              _agentDropdown(
+                context,
+                value: session.criticAgent,
+                agentStatus: agentStatus,
+                onChanged: (a) {
+                  if (a != null) ref.read(sessionProvider.notifier).setCriticAgent(a);
+                },
+              ),
+              const SizedBox(height: 12),
+
+              _fieldLabel(context, '비판 강도'),
+              const SizedBox(height: 4),
+              _dropdown<String>(
+                context,
+                value: session.criticismLevel,
+                items: SessionConfig.criticismLevels,
+                labelOf: (s) => s,
+                onChanged: (v) {
+                  if (v != null) ref.read(sessionProvider.notifier).setCriticismLevel(v);
+                },
+              ),
+
+              const SizedBox(height: 16),
+
+              // Advanced settings (accordion)
+              _buildAdvancedSettings(session),
+
+              const SizedBox(height: 8),
+            ],
           ),
         ),
-        const SizedBox(height: 16),
+
       ],
     );
   }
@@ -296,12 +247,36 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
             child: InkWell(
               borderRadius: BorderRadius.circular(8),
               onTap: () {
-                ref.read(sessionProvider.notifier).setAnalysisMode(entry.key);
-                // 분석 모드에 따른 기본값 적용
+                final notifier = ref.read(sessionProvider.notifier);
+                notifier.setAnalysisMode(entry.key);
+
                 final defaults = SessionConfig.defaultsForMode(entry.key);
-                if (defaults.containsKey('riskFocus') && !_riskManuallyEdited) {
-                  _riskController.text = defaults['riskFocus']!;
-                  ref.read(sessionProvider.notifier).setRiskFocus(defaults['riskFocus']!);
+
+                // 우측 패널의 결과 요청 텍스트 연동
+                StartPanelController.updateForMode(entry.key);
+
+                if (entry.key == 'custom') {
+                  // 직접 설정: 고급 설정 펼치기
+                  setState(() => _showAdvanced = true);
+                } else {
+                  // 프리셋 연동
+                  if (defaults.containsKey('templatePreset')) {
+                    final preset = TemplatePreset.values.firstWhere(
+                      (p) => p.name == defaults['templatePreset'],
+                      orElse: () => TemplatePreset.developer,
+                    );
+                    notifier.setStageTemplatePreset(0, preset, cascadeFromFirst: true);
+                  }
+                  if (defaults.containsKey('runObjective')) {
+                    notifier.setRunObjective(defaults['runObjective']!);
+                  }
+                  if (defaults.containsKey('criticismLevel')) {
+                    notifier.setCriticismLevel(defaults['criticismLevel']!);
+                  }
+                  if (defaults.containsKey('riskFocus')) {
+                    _riskController.text = defaults['riskFocus']!;
+                    notifier.setRiskFocus(defaults['riskFocus']!);
+                  }
                 }
               },
               child: Padding(
@@ -493,44 +468,70 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
     );
   }
 
-  Widget _estimatedTimeInfo(int enabledStageCount) {
-    const autoAnalysisMin = 2;
-    const perStageMaxMin = 20;
-    const perStageTypicalMin = 5;
-
-    final maxMinutes = autoAnalysisMin + (enabledStageCount * perStageMaxMin);
-    final typicalMinutes = autoAnalysisMin + (enabledStageCount * perStageTypicalMin);
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF0F9FF),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFBAE6FD)),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.schedule, size: 14, color: Colors.blue.shade400),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              '예상 소요 시간: 약 $typicalMinutes분 ~ 최대 $maxMinutes분 ($enabledStageCount단계)',
-              style: TextStyle(fontSize: 11, color: Colors.blue.shade700),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Future<void> _pickDocument() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['md', 'txt'],
+      allowedExtensions: FileConverterService.pickerExtensions,
     );
     if (result != null && result.files.single.path != null) {
-      ref.read(sessionProvider.notifier).setSourceDocument(result.files.single.path!);
+      await _loadFile(result.files.single.path!);
     }
+  }
+
+  Future<void> _loadFile(String path) async {
+    setState(() {
+      _fileError = null;
+      _isConverting = false;
+    });
+
+    if (!FileConverterService.isSupported(path)) {
+      setState(() {
+        _fileError = '지원하지 않는 파일 형식입니다.\n지원 형식: ${FileConverterService.pickerExtensions.map((e) => '.$e').join(', ')}';
+      });
+      return;
+    }
+
+    if (FileConverterService.isTextFormat(path)) {
+      ref.read(sessionProvider.notifier).setSourceDocument(path);
+      return;
+    }
+
+    // 바이너리 파일: 변환 필요
+    setState(() => _isConverting = true);
+
+    final convertResult = await FileConverterService.convertToText(path);
+
+    if (!mounted) return;
+
+    if (convertResult.success && convertResult.content != null) {
+      // 변환된 내용을 임시 md 파일로 저장
+      final session = ref.read(sessionProvider);
+      final outputDir = session.outputRootPath;
+      final dir = Directory(outputDir);
+      if (!await dir.exists()) await dir.create(recursive: true);
+
+      final baseName = path.split(Platform.pathSeparator).last;
+      final mdPath = '$outputDir${Platform.pathSeparator}${baseName}_converted.md';
+      await File(mdPath).writeAsString(convertResult.content!);
+
+      ref.read(sessionProvider.notifier).setSourceDocument(mdPath);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${convertResult.originalFormat} 파일이 텍스트로 변환되었습니다'),
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } else {
+      setState(() {
+        _fileError = convertResult.error ?? '파일 변환에 실패했습니다.';
+      });
+    }
+
+    setState(() => _isConverting = false);
   }
 
   Widget _sectionTitle(BuildContext context, String title) {
@@ -615,4 +616,20 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
   }
 
   String _fileName(String path) => path.split(Platform.pathSeparator).last;
+
+  String _analysisStepLabel(List<OrchestrationStage> stages) {
+    final steps = stages
+        .where((s) => s.enabled && s.role == StageRole.analysis)
+        .map((s) => 'Step ${s.stepNumber}')
+        .toList();
+    return steps.isEmpty ? '' : steps.join(', ');
+  }
+
+  String _critiqueStepLabel(List<OrchestrationStage> stages) {
+    final steps = stages
+        .where((s) => s.enabled && s.role == StageRole.critique)
+        .map((s) => 'Step ${s.stepNumber}')
+        .toList();
+    return steps.isEmpty ? '' : steps.join(', ');
+  }
 }
