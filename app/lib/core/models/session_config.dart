@@ -232,4 +232,23 @@ class SessionConfig {
 
     return buf.toString();
   }
+
+  /// 문서 첫 부분을 읽고 분석 모드를 추천하는 경량 프롬프트
+  static String buildModeRecommendPrompt(String documentPreview) {
+    return '''아래 문서의 첫 부분을 읽고, 가장 적합한 분석 모드를 JSON으로 추천하세요.
+
+선택지:
+- "code": 코드/기술 분석 (버그, 리팩터링, 코드 리뷰 관련 문서)
+- "planning": 기획/전략 분석 (기획서, UX 설계, 기능 요구서)
+- "executive": 경영진 피드백 분석 (경영진/상위자의 피드백, 리뷰)
+- "prompt_eng": 프롬프트 엔지니어링 개선 (AI 프롬프트, 시스템 프롬프트)
+
+반드시 아래 JSON 형식으로만 응답하세요:
+```json
+{"mode": "...", "reason": "한 줄 이유"}
+```
+
+--- 문서 미리보기 ---
+$documentPreview''';
+  }
 }

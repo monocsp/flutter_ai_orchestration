@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,6 +8,8 @@ import '../../core/models/orchestration_preset.dart';
 import '../../core/models/orchestration_stage.dart';
 import '../../core/models/session_config.dart';
 import '../../core/models/template_preset.dart';
+import '../../core/services/agent_runner_service.dart';
+import '../../core/services/agent_detection_service.dart';
 import '../../core/services/file_converter_service.dart';
 import '../../providers/session_providers.dart';
 import '../../providers/agent_providers.dart';
@@ -29,6 +32,7 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
   String _outputFormatMode = '직접입력';
   String? _fileError;
   bool _isConverting = false;
+  String? _modeRecommendation; // AI 추천 모드 안내 메시지
 
   @override
   void initState() {
@@ -131,6 +135,32 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
               const SizedBox(height: 20),
               const Divider(),
               const SizedBox(height: 12),
+
+              // AI 모드 추천 안내
+              if (_modeRecommendation != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF0FDF4),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFBBF7D0)),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.auto_awesome, size: 14, color: Colors.green.shade600),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _modeRecommendation!,
+                            style: TextStyle(fontSize: 11, color: Colors.green.shade700),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
 
               // Analysis Mode
               _sectionTitle(context, '분석 모드'),
@@ -493,6 +523,7 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
 
     if (FileConverterService.isTextFormat(path)) {
       ref.read(sessionProvider.notifier).setSourceDocument(path);
+      _tryAutoRecommendMode();
       return;
     }
 
@@ -515,6 +546,7 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
       await File(mdPath).writeAsString(convertResult.content!);
 
       ref.read(sessionProvider.notifier).setSourceDocument(mdPath);
+      _tryAutoRecommendMode();
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -532,6 +564,78 @@ class _SessionSetupPanelState extends ConsumerState<SessionSetupPanel> {
     }
 
     setState(() => _isConverting = false);
+  }
+
+  /// 문서 업로드 후 설치된 Agent로 분석 모드를 자동 추천
+  Future<void> _tryAutoRecommendMode() async {
+    final session = ref.read(sessionProvider);
+    final content = session.sourceDocumentContent;
+    if (content == null || content.isEmpty) return;
+
+    // 설치된 Agent 찾기
+    final detection = AgentDetectionService();
+    final statuses = await detection.detectAll();
+    const priority = ['claude', 'gemini', 'codex'];
+    String? availableAgent;
+    for (final id in priority) {
+      if (statuses.any((s) => s.agentId == id && s.installed)) {
+        availableAgent = id;
+        break;
+      }
+    }
+
+    if (availableAgent == null) return; // Agent 없으면 추천 안 함
+
+    // 문서 첫 500자로 경량 추천
+    final preview = content.length > 500 ? content.substring(0, 500) : content;
+    final prompt = SessionConfig.buildModeRecommendPrompt(preview);
+
+    final runner = AgentRunnerService();
+    final result = await runner.run(agentId: availableAgent, promptContent: prompt);
+
+    if (!mounted || !result.success) return;
+
+    try {
+      final output = result.output;
+      final jsonMatch = RegExp(r'\{[\s\S]*?\}').firstMatch(output);
+      if (jsonMatch == null) return;
+
+      final parsed = jsonDecode(jsonMatch.group(0)!) as Map<String, dynamic>;
+      final mode = parsed['mode'] as String?;
+      final reason = parsed['reason'] as String?;
+
+      if (mode != null && SessionConfig.analysisModes.containsKey(mode)) {
+        final notifier = ref.read(sessionProvider.notifier);
+        notifier.setAnalysisMode(mode);
+
+        // 모드에 따른 설정 연동
+        final defaults = SessionConfig.defaultsForMode(mode);
+        if (defaults.containsKey('templatePreset')) {
+          final preset = TemplatePreset.values.firstWhere(
+            (p) => p.name == defaults['templatePreset'],
+            orElse: () => TemplatePreset.developer,
+          );
+          notifier.setStageTemplatePreset(0, preset, cascadeFromFirst: true);
+        }
+        if (defaults.containsKey('runObjective')) notifier.setRunObjective(defaults['runObjective']!);
+        if (defaults.containsKey('criticismLevel')) notifier.setCriticismLevel(defaults['criticismLevel']!);
+        if (defaults.containsKey('riskFocus')) {
+          _riskController.text = defaults['riskFocus']!;
+          notifier.setRiskFocus(defaults['riskFocus']!);
+        }
+
+        // 기본 결과 요청 채우기
+        StartPanelController.updateForMode(mode);
+
+        if (mounted) {
+          setState(() {
+            _modeRecommendation = '${SessionConfig.analysisModes[mode]} 모드를 추천합니다${reason != null ? ': $reason' : ''}';
+          });
+        }
+      }
+    } catch (_) {
+      // 파싱 실패 시 무시
+    }
   }
 
   Widget _sectionTitle(BuildContext context, String title) {
