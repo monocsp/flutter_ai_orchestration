@@ -124,30 +124,46 @@ class SessionConfig {
     'custom': '직접 설정',
   };
 
-  /// 분석 모드에 따른 기본 설정
+  /// 분석 모드별 기본 결과 요청 텍스트
+  static const Map<String, String> defaultResultRequests = {
+    'code': '우선순위 보드(표), 작업 항목별 분석(관련 파일, 접근 방식, 리스크), 검증 계획, 다음 작업자가 첫 30분 안에 볼 것을 포함한 실행 계획서를 작성해주세요.',
+    'planning': '바로 착수 가능한 최종 실행 계획서를 작성해주세요. 채택/기각 판단, 실행 항목별 우선순위, 측정 가능한 완료 기준, 이해관계자별 액션 아이템을 포함해주세요.',
+    'executive': '경영진 피드백 분석서를 작성해주세요. 발신자 의도 정리, 긍정/부정 평가 분리, 명시적 지시 vs 암묵적 기대 구분, 기획자가 자체 판단할 영역과 상위 확인이 필요한 영역을 나눠주세요.',
+    'prompt_eng': '최종 개선된 프롬프트 전문을 작성해주세요. Before/After 비교, 각 수정의 근거, 개선 효과 점수표(구조 명확성, 모호성 제거, 할루시네이션 방지, 출력 일관성), 사용 가이드를 포함해주세요.',
+  };
+
+  /// 분석 모드에 따른 기본 설정 (프리셋 포함)
   static Map<String, String> defaultsForMode(String mode) {
     switch (mode) {
       case 'code':
         return {
+          'templatePreset': 'developer',
           'runObjective': '비판 검토 포함 실행 계획',
+          'criticismLevel': '높음',
           'riskFocus': '공통 컴포넌트 영향, 상태 관리, 라이프사이클, 회귀 위험',
         };
       case 'planning':
         return {
+          'templatePreset': 'planner',
           'runObjective': '기능 기획 검증',
+          'criticismLevel': '높음',
           'riskFocus': '의도 왜곡, 요구사항 누락, 실행 가능성, 이해관계자 해석 차이, 측정 기준 부재',
         };
       case 'executive':
         return {
+          'templatePreset': 'executive',
           'runObjective': '경영진 피드백 분석',
+          'criticismLevel': '매우 높음',
           'riskFocus': '발신자 의도 왜곡, 명시적 지시 vs 암묵적 기대 혼동, 긍정/부정 평가 분리 누락',
         };
       case 'prompt_eng':
         return {
+          'templatePreset': 'promptEng',
           'runObjective': '비판 검토 포함 실행 계획',
+          'criticismLevel': '매우 높음',
           'riskFocus': '모호한 지시, 할루시네이션 유발 구조, 누락된 조건, 출력 형식 불명확',
         };
-      default:
+      default: // 'custom'
         return {};
     }
   }
