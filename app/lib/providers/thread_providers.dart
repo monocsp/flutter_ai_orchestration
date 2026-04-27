@@ -1155,6 +1155,21 @@ class ThreadListNotifier extends Notifier<ThreadListState> {
           });
         }
       }
+
+      // 결과 요청 자동 생성 (유저가 비워둔 경우에만)
+      final currentSession = ref.read(sessionProvider);
+      if (currentSession.userResultRequest.isEmpty &&
+          parsed.containsKey('userResultRequest')) {
+        final val = parsed['userResultRequest'] as String;
+        if (val.isNotEmpty) {
+          sessionNotifier.setUserResultRequest(val);
+          applied.add({
+            'field': '결과 요청 (자동 생성)',
+            'value': val,
+            'reason': '문서 내용과 분석 모드에 기반하여 자동 결정',
+          });
+        }
+      }
     } catch (_) {
       // 파싱 실패 시 폴백
       _applyFallbackSettings(sessionNotifier: sessionNotifier);
@@ -1183,6 +1198,13 @@ class ThreadListNotifier extends Notifier<ThreadListState> {
     if (session.outputFormat.isEmpty) {
       sessionNotifier.setOutputFormat('상세 실행 계획');
     }
+    // 결과 요청이 비어있으면 모드 기본값 적용
+    if (session.userResultRequest.isEmpty) {
+      final defaultRequest = SessionConfig.defaultResultRequests[session.analysisMode];
+      if (defaultRequest != null) {
+        sessionNotifier.setUserResultRequest(defaultRequest);
+      }
+    }
   }
 
   void _updateThreadStatus(String threadId, ThreadStatus status) {
@@ -1201,9 +1223,10 @@ class ThreadListNotifier extends Notifier<ThreadListState> {
     final thread = state.threads[threadIdx];
     final stages = List<StageThread>.from(thread.stages);
 
-    // index 0 = agent check, index 1 = settings, index 2~ = 실제 단계
-    for (var i = 2; i < stages.length; i++) {
-      final artifactIdx = i - 2;
+    // index 0 = agent check, index 1 = mode recommend, index 2 = settings, index 3~ = 실제 단계
+    final stageStartIndex = 3;
+    for (var i = stageStartIndex; i < stages.length; i++) {
+      final artifactIdx = i - stageStartIndex;
       stages[i] = stages[i].copyWith(
         promptPath: artifactIdx < artifact.promptPaths.length
             ? artifact.promptPaths[artifactIdx]

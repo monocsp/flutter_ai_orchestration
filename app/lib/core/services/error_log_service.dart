@@ -10,6 +10,11 @@ class ErrorLogService {
       if (userProfile.isNotEmpty) {
         return p.join(userProfile, 'Documents', 'AI Orchestration', 'logs');
       }
+    } else if (Platform.isMacOS) {
+      final home = Platform.environment['HOME'] ?? '';
+      if (home.isNotEmpty) {
+        return p.join(home, 'Documents', 'AI Orchestration', 'logs');
+      }
     }
     return p.join(p.dirname(Platform.resolvedExecutable), 'logs');
   }

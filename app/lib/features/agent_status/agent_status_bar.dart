@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
 import '../../core/models/agent_provider.dart';
 import '../../providers/agent_providers.dart';
 import '../../providers/session_providers.dart';
@@ -70,7 +71,7 @@ class AgentStatusBar extends ConsumerWidget {
                   const SizedBox(width: 4),
                   Flexible(
                     child: Text(
-                      session.lastArtifact!.sessionDirPath.split('/').last,
+                      p.basename(session.lastArtifact!.sessionDirPath),
                       style: TextStyle(
                         fontSize: 11,
                         fontFamily: 'monospace',
