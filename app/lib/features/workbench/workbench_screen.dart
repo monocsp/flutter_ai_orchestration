@@ -143,6 +143,7 @@ class _SideRail extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Container(
+      key: tutorialSideRailKey,
       width: 56,
       decoration: const BoxDecoration(
         color: Color(0xFF1E293B), // slate-800
@@ -618,14 +619,21 @@ class _SequentialSetup extends StatelessWidget {
             SizedBox(
               width: sideWidth,
               child: Container(
+                key: tutorialSessionSetupKey,
                 decoration: AppTheme.sidebarDecoration,
                 child: const SessionSetupPanel(),
               ),
             ),
-            const Expanded(child: StageEditorPanel()),
+            Expanded(
+              child: Container(
+                key: tutorialStageEditorKey,
+                child: const StageEditorPanel(),
+              ),
+            ),
             SizedBox(
               width: rightWidth,
               child: Container(
+                key: tutorialDocumentsPanelKey,
                 decoration: const BoxDecoration(
                   border: Border(
                     left: BorderSide(color: Color(0xFFE2E8F0)),

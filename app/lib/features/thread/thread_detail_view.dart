@@ -4,15 +4,55 @@ import '../../core/models/orchestration_thread.dart';
 import '../../providers/thread_providers.dart';
 import 'stage_thread_card.dart';
 
-class ThreadDetailView extends ConsumerWidget {
+class ThreadDetailView extends ConsumerStatefulWidget {
   const ThreadDetailView({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ThreadDetailView> createState() => _ThreadDetailViewState();
+}
+
+class _ThreadDetailViewState extends ConsumerState<ThreadDetailView> {
+  final ScrollController _scrollController = ScrollController();
+  /// 마지막으로 스크롤한 inProgress 단계 인덱스 (1회만 스크롤)
+  int? _lastScrolledInProgressIndex;
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  /// inProgress 단계가 바뀌면 해당 위치로 자동 스크롤
+  void _scrollToInProgressStage(List<StageThread> stages) {
+    final inProgressIndex =
+        stages.indexWhere((s) => s.status == ThreadStatus.inProgress);
+    if (inProgressIndex < 0) return;
+    if (inProgressIndex == _lastScrolledInProgressIndex) return;
+
+    _lastScrolledInProgressIndex = inProgressIndex;
+
+    // 카드 높이를 대략 추정하여 스크롤 위치 계산
+    // 각 StageThreadCard는 대략 80~120px, 여유 포함
+    final targetOffset = inProgressIndex * 100.0;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+      final maxScroll = _scrollController.position.maxScrollExtent;
+      _scrollController.animateTo(
+        targetOffset.clamp(0.0, maxScroll),
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOutCubic,
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final threadState = ref.watch(threadListProvider);
     final thread = threadState.selectedThread;
 
     if (thread == null) {
+      _lastScrolledInProgressIndex = null;
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -27,6 +67,9 @@ class ThreadDetailView extends ConsumerWidget {
         ),
       );
     }
+
+    // inProgress 단계 변경 감지 → 자동 스크롤
+    _scrollToInProgressStage(thread.stages);
 
     return Column(
       children: [
@@ -122,6 +165,7 @@ class ThreadDetailView extends ConsumerWidget {
         // Stage timeline
         Expanded(
           child: ListView.builder(
+            controller: _scrollController,
             padding: const EdgeInsets.only(top: 16, bottom: 24),
             itemCount: thread.stages.length,
             itemBuilder: (context, index) {

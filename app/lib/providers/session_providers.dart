@@ -18,15 +18,20 @@ String _resolveAppDir() {
 }
 
 /// 사용자 데이터를 저장할 디렉토리 (output, logs 등)
-/// Program Files는 쓰기 권한이 없으므로 사용자 문서 폴더 사용
+/// Program Files / .app 번들은 쓰기 권한이 없으므로 사용자 문서 폴더 사용
 String _resolveDataDir() {
   if (Platform.isWindows) {
     final userProfile = Platform.environment['USERPROFILE'] ?? '';
     if (userProfile.isNotEmpty) {
       return p.join(userProfile, 'Documents', 'AI Orchestration');
     }
+  } else if (Platform.isMacOS) {
+    final home = Platform.environment['HOME'] ?? '';
+    if (home.isNotEmpty) {
+      return p.join(home, 'Documents', 'AI Orchestration');
+    }
   }
-  // macOS/Linux 또는 폴백: exe와 같은 디렉토리
+  // Linux 또는 폴백: exe와 같은 디렉토리
   return _resolveAppDir();
 }
 

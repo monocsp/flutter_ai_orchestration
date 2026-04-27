@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../core/services/agent_detection_service.dart';
 import '../../providers/agent_providers.dart';
 
 class AgentSetupScreen extends ConsumerStatefulWidget {
@@ -29,10 +30,21 @@ class _AgentSetupScreenState extends ConsumerState<AgentSetupScreen> {
   Future<void> _checkNpm() async {
     setState(() => _checkingNpm = true);
     try {
-      final result = await Process.run(
-        Platform.isWindows ? 'cmd.exe' : 'bash',
-        Platform.isWindows ? ['/c', 'npm --version'] : ['-c', 'npm --version'],
-      ).timeout(const Duration(seconds: 10));
+      final loginPath = await AgentDetectionService.getLoginShellPath();
+      late ProcessResult result;
+      if (Platform.isWindows) {
+        final env = Map<String, String>.from(Platform.environment);
+        env['PATH'] = loginPath;
+        result = await Process.run(
+          'cmd.exe', ['/c', 'npm --version'],
+          environment: env,
+        ).timeout(const Duration(seconds: 10));
+      } else {
+        final shell = Platform.environment['SHELL'] ?? '/bin/zsh';
+        result = await Process.run(
+          shell, ['-c', 'export PATH="$loginPath:\$PATH"; npm --version'],
+        ).timeout(const Duration(seconds: 10));
+      }
 
       setState(() {
         _npmInstalled = result.exitCode == 0;
@@ -57,10 +69,21 @@ class _AgentSetupScreenState extends ConsumerState<AgentSetupScreen> {
     final installCmd = _getInstallCommand(_selectedAgent);
 
     try {
-      final result = await Process.run(
-        Platform.isWindows ? 'cmd.exe' : 'bash',
-        Platform.isWindows ? ['/c', installCmd] : ['-c', installCmd],
-      ).timeout(const Duration(minutes: 5));
+      final loginPath = await AgentDetectionService.getLoginShellPath();
+      late ProcessResult result;
+      if (Platform.isWindows) {
+        final env = Map<String, String>.from(Platform.environment);
+        env['PATH'] = loginPath;
+        result = await Process.run(
+          'cmd.exe', ['/c', installCmd],
+          environment: env,
+        ).timeout(const Duration(minutes: 5));
+      } else {
+        final shell = Platform.environment['SHELL'] ?? '/bin/zsh';
+        result = await Process.run(
+          shell, ['-c', 'export PATH="$loginPath:\$PATH"; $installCmd'],
+        ).timeout(const Duration(minutes: 5));
+      }
 
       final stdout = (result.stdout as String).trim();
       final stderr = (result.stderr as String).trim();

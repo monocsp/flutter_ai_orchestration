@@ -49,6 +49,12 @@ class _DocumentsPanelState extends ConsumerState<DocumentsPanel>
 
     // 오케스트레이션 시작 전이면 결과 요청 + 시작 버튼
     if (artifact == null) {
+      final view = ref.watch(workbenchViewProvider);
+      final threadState = ref.watch(threadListProvider);
+      // thread view에 진입했고 스레드가 있으면 → 준비 중 화면
+      if (view == WorkbenchView.thread && threadState.threads.isNotEmpty) {
+        return _buildPreparingPanel(session);
+      }
       return _buildStartPanel(context, session);
     }
 
@@ -196,8 +202,54 @@ class _DocumentsPanelState extends ConsumerState<DocumentsPanel>
             ],
           ),
         ),
+        // 결과 요청 방향 표시
+        if (session.userResultRequest.isNotEmpty)
+          _buildResultDirectionBanner(session.userResultRequest),
         Expanded(child: _fileListWithPreview(files)),
       ],
+    );
+  }
+
+  /// 결과 탭 상단: 결과 요청 방향 배너
+  Widget _buildResultDirectionBanner(String resultRequest) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: const BoxDecoration(
+        color: Color(0xFFF0FDF4),
+        border: Border(bottom: BorderSide(color: Color(0xFFBBF7D0))),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.assignment_outlined,
+                  size: 14, color: Color(0xFF16A34A)),
+              const SizedBox(width: 6),
+              Text(
+                '결과 방향',
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF166534),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            resultRequest,
+            style: const TextStyle(
+              fontSize: 11,
+              color: Color(0xFF166534),
+              height: 1.4,
+            ),
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
     );
   }
 
@@ -257,6 +309,269 @@ class _DocumentsPanelState extends ConsumerState<DocumentsPanel>
                 ),
         ),
       ],
+    );
+  }
+
+  /// 오케스트레이션 시작 직후 (모드추천/설정분석 중) 준비 화면
+  Widget _buildPreparingPanel(SessionState session) {
+    return Column(
+      children: [
+        Container(
+          decoration: const BoxDecoration(
+            border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+          ),
+          child: TabBar(
+            controller: _tabController,
+            labelStyle: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+            tabs: const [
+              Tab(text: '입력/프롬프트'),
+              Tab(text: '결과'),
+            ],
+          ),
+        ),
+        Expanded(
+          child: TabBarView(
+            controller: _tabController,
+            children: [
+              // 입력 탭: 계획서만 클릭 가능 + 안내 메시지
+              _buildPreparingInputTab(session),
+              // 결과 탭: 결과 요청이 확정되면 보여주기
+              _buildPreparingResultTab(session),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 준비 중 입력 탭: 계획서만 클릭 가능, 프롬프트 자리는 비활성화 안내
+  Widget _buildPreparingInputTab(SessionState session) {
+    final files = <_FileEntry>[];
+
+    if (session.sourceDocumentPath != null) {
+      files.add(_FileEntry(
+        path: session.sourceDocumentPath!,
+        label: '계획서',
+        icon: Icons.description,
+        color: const Color(0xFF0D9488),
+      ));
+    }
+
+    return Column(
+      children: [
+        // 클릭 가능한 계획서
+        if (files.isNotEmpty)
+          Expanded(
+            flex: 2,
+            child: ListView(
+              padding: const EdgeInsets.all(8),
+              children: [
+                // 계획서 파일
+                ...files.map((entry) {
+                  final isSelected = entry.path == _selectedFilePath;
+                  return ListTile(
+                    dense: true,
+                    selected: isSelected,
+                    selectedTileColor:
+                        const Color(0xFF0D9488).withValues(alpha: 0.08),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    leading: Icon(
+                      entry.icon,
+                      size: 18,
+                      color: isSelected
+                          ? const Color(0xFF0D9488)
+                          : (entry.color ?? Colors.grey.shade400),
+                    ),
+                    title: Text(
+                      entry.label,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight:
+                            isSelected ? FontWeight.w600 : FontWeight.w400,
+                      ),
+                    ),
+                    onTap: () => _selectFile(entry.path),
+                  );
+                }),
+                const SizedBox(height: 8),
+                // 비활성화된 프롬프트 안내
+                Tooltip(
+                  message: '설정 분석이 완료되면 프롬프트가 생성됩니다',
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 1.5,
+                            color: Colors.grey.shade400,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            '설정 분석 후 프롬프트가 생성됩니다',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade400,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        if (files.isNotEmpty) const Divider(height: 1),
+        // 미리보기
+        Expanded(
+          flex: 3,
+          child: _selectedFileContent != null
+              ? MarkdownViewer(content: _selectedFileContent!)
+              : Center(
+                  child: Text(
+                    '파일을 선택하면 미리보기가 표시됩니다',
+                    style:
+                        TextStyle(color: Colors.grey.shade400, fontSize: 12),
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
+
+  /// 준비 중 결과 탭: 결과 요청이 확정되면 미리 보여줌
+  Widget _buildPreparingResultTab(SessionState session) {
+    final resultRequest = session.userResultRequest;
+
+    // 아직 결과 요청이 비어있으면 → 분석 중 스피너
+    if (resultRequest.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              '설정 분석 중입니다...\n결과 요청이 자동으로 결정됩니다.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.grey.shade500,
+                height: 1.5,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // 결과 요청이 확정됨 → 내용 표시
+    return Padding(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 헤더
+          Row(
+            children: [
+              Icon(Icons.assignment_outlined,
+                  size: 20, color: const Color(0xFF0D9488)),
+              const SizedBox(width: 8),
+              const Text(
+                '최종 결과물 방향',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF0F172A),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '아래 내용을 기반으로 각 단계의 분석이 진행됩니다.',
+            style: TextStyle(fontSize: 11, color: Colors.grey.shade400),
+          ),
+          const SizedBox(height: 16),
+
+          // 결과 요청 내용
+          Expanded(
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF0FDF4),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFBBF7D0)),
+              ),
+              child: SingleChildScrollView(
+                child: Text(
+                  resultRequest,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: Color(0xFF166534),
+                    height: 1.6,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // 하단 안내
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 1.5,
+                    color: Colors.grey.shade400,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    '곧 1차 분석이 시작됩니다...',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey.shade500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 

@@ -191,6 +191,7 @@ class SessionConfig {
     buf.writeln('아래 문서를 읽고, 이 문서를 AI 오케스트레이션으로 분석할 때 적합한 설정을 JSON으로 추천하세요.');
     buf.writeln('');
     buf.writeln('분석 모드: $modeName');
+    final needsResultRequest = userResultRequest.isEmpty;
     if (userResultRequest.isNotEmpty) {
       buf.writeln('사용자 추가 요청: $userResultRequest');
     }
@@ -212,6 +213,9 @@ class SessionConfig {
     buf.writeln('또한 반드시 아래 항목도 포함하세요:');
     buf.writeln('- persona: 이 문서를 가장 잘 분석할 수 있는 전문가의 페르소나를 작성하세요. 구체적인 전문 분야, 경력, 관점을 포함해야 합니다. 예: "10년차 모바일 UX 전략가이며 감정 기반 서비스의 리텐션 구조에 전문성이 있는 시니어 프로덕트 매니저"');
     buf.writeln('- focusPoints: 이 문서의 핵심 분석 포인트 3~5개를 배열로 작성하세요. 각 포인트는 구체적인 분석 방향이어야 합니다.');
+    if (needsResultRequest) {
+      buf.writeln('- userResultRequest: 이 문서를 분석한 최종 결과물에 반드시 포함되어야 할 내용을 구체적으로 작성하세요. 예: "우선순위 보드(표), 작업 항목별 분석, 검증 계획을 포함한 실행 계획서를 작성해주세요." 문서의 성격과 분석 모드에 맞게 판단하세요.');
+    }
     buf.writeln('');
     buf.writeln('각 선택에 대한 이유도 reason 필드에 한 줄로 작성하세요.');
     buf.writeln('');
@@ -225,6 +229,9 @@ class SessionConfig {
     if (needsFormat) fields.add('  "outputFormat": "...", "outputFormatReason": "..."');
     fields.add('  "persona": "...", "personaReason": "..."');
     fields.add('  "focusPoints": ["...", "...", "..."]');
+    if (needsResultRequest) {
+      fields.add('  "userResultRequest": "..."');
+    }
     buf.writeln(fields.join(',\n'));
     buf.writeln('}');
     buf.writeln('```');
